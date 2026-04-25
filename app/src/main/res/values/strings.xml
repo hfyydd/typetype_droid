@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TypeType Droid</string>
+    <string name="ime_name">TypeType Voice</string>
+    <string name="ime_subtype_zh">中文语音</string>
+    <string name="setup_title">TypeType Voice</string>
+    <string name="setup_body">启用输入法并授予麦克风权限后即可离线语音输入。</string>
+    <string name="grant_mic">授予麦克风权限</string>
+    <string name="open_input_settings">打开输入法设置</string>
+    <string name="choose_input_method">选择输入法</string>
+    <string name="mode_streaming">流式</string>
+    <string name="mode_offline">稳妥</string>
+    <string name="status_idle">待机</string>
+    <string name="status_listening">正在听</string>
+    <string name="status_decoding">识别中</string>
+    <string name="status_error">异常</string>
+    <string name="mic_start">开始语音</string>
+    <string name="mic_stop">停止语音</string>
+</resources>

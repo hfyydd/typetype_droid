@@ -1,0 +1,69 @@
+package com.typetype.droid.input
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class StreamingDiffWriterTest {
+    @Test
+    fun appendsNewSuffix() {
+        val writer = StreamingDiffWriter()
+
+        assertEquals(StreamingEdit(0, "今天天气", ""), writer.nextEdit("今天天气"))
+        assertEquals(StreamingEdit(0, "不错", ""), writer.nextEdit("今天天气不错"))
+    }
+
+    @Test
+    fun rewritesRecentTail() {
+        val writer = StreamingDiffWriter()
+
+        writer.nextEdit("语音输入法")
+
+        assertEquals(
+            StreamingEdit(deleteChars = 1, insertText = "", expectedDeletedText = "法"),
+            writer.nextEdit("语音输入"),
+        )
+    }
+
+    @Test
+    fun commitControllerUpdatesFieldWithStreamingDiffs() {
+        val connection = FakeEditableInputConnection()
+        val controller = InputCommitController()
+        controller.attach(connection)
+
+        assertTrue(controller.writeStreaming("今天天气"))
+        assertEquals("今天天气", connection.text)
+
+        assertTrue(controller.writeStreaming("今天天气不错"))
+        assertEquals("今天天气不错", connection.text)
+
+        assertTrue(controller.writeStreaming("今天天气很好"))
+        assertEquals("今天天气很好", connection.text)
+    }
+
+    @Test
+    fun commitControllerCanDeleteEntireStreamingTail() {
+        val connection = FakeEditableInputConnection()
+        val controller = InputCommitController()
+        controller.attach(connection)
+
+        assertTrue(controller.writeStreaming("错误"))
+        assertEquals("错误", connection.text)
+
+        assertTrue(controller.writeStreaming(""))
+        assertEquals("", connection.text)
+    }
+
+    @Test
+    fun resetSessionKeepsCommittedTextAndStartsNextSegmentAsAppend() {
+        val connection = FakeEditableInputConnection()
+        val controller = InputCommitController()
+        controller.attach(connection)
+
+        assertTrue(controller.writeStreaming("今天天气"))
+        controller.resetSession()
+        assertTrue(controller.writeStreaming("不错"))
+
+        assertEquals("今天天气不错", connection.text)
+    }
+}
