@@ -8,5 +8,6 @@ class NoOpAsrEngineFactory : AsrEngineFactory {
 
 private object NoOpAsrEngine : AsrEngine {
     override fun acceptSamples(samples: FloatArray) = Unit
+    override fun reset() = Unit
     override fun close() = Unit
 }

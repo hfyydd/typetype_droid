@@ -84,4 +84,19 @@ class StreamingDiffWriterTest {
         assertTrue(controller.writeStreaming("下一句"))
         assertEquals("下一句", connection.text)
     }
+
+    @Test
+    fun resetAfterExternalCommitStartsCleanNextDictationSegment() {
+        val connection = FakeEditableInputConnection()
+        val controller = InputCommitController()
+        controller.attach(connection)
+
+        assertTrue(controller.writeStreaming("今天天气"))
+        connection.clear()
+        controller.resetAfterExternalCommit()
+
+        assertEquals(false, controller.hasWrittenOutput())
+        assertTrue(controller.writeStreaming("下一句"))
+        assertEquals("下一句", connection.text)
+    }
 }

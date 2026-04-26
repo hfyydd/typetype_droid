@@ -16,6 +16,7 @@ import com.typetype.droid.session.DictationMode
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class SherpaAsrEngineFactory(
     private val assetManager: AssetManager,
@@ -110,26 +111,43 @@ private class SherpaStreamingAsrEngine(
 ) : AsrEngine {
     private var stream = recognizer.createStream()
     private val closed = AtomicBoolean(false)
+    private val generation = AtomicInteger(0)
 
     override fun acceptSamples(samples: FloatArray) {
-        if (closed.get()) return
-        stream.acceptWaveform(samples, AudioCaptureEngine.SAMPLE_RATE)
-        while (recognizer.isReady(stream)) {
-            recognizer.decode(stream)
+        synchronized(this) {
+            if (closed.get()) return
+            val currentGeneration = generation.get()
+            stream.acceptWaveform(samples, AudioCaptureEngine.SAMPLE_RATE)
+            while (recognizer.isReady(stream)) {
+                recognizer.decode(stream)
+            }
+            if (closed.get() || currentGeneration != generation.get()) return
+            val result = recognizer.getResult(stream).text
+            if (result.isNotBlank()) {
+                onEvent(AsrEvent.Text(result))
+            }
+            if (closed.get() || currentGeneration != generation.get()) return
+            if (recognizer.isEndpoint(stream)) {
+                recognizer.reset(stream)
+                onEvent(AsrEvent.SegmentFinished)
+            }
         }
-        val result = recognizer.getResult(stream).text
-        if (result.isNotBlank()) {
-            onEvent(AsrEvent.Text(result))
-        }
-        if (recognizer.isEndpoint(stream)) {
-            recognizer.reset(stream)
-            onEvent(AsrEvent.SegmentFinished)
+    }
+
+    override fun reset() {
+        synchronized(this) {
+            if (closed.get()) return
+            generation.incrementAndGet()
+            stream.release()
+            stream = recognizer.createStream()
         }
     }
 
     override fun close() {
-        if (!closed.compareAndSet(false, true)) return
-        stream.release()
+        synchronized(this) {
+            if (!closed.compareAndSet(false, true)) return
+            stream.release()
+        }
     }
 }
 
@@ -141,9 +159,11 @@ private class SherpaOfflineAsrEngine(
 ) : AsrEngine {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val closed = AtomicBoolean(false)
+    private val generation = AtomicInteger(0)
 
     override fun acceptSamples(samples: FloatArray) {
         if (closed.get()) return
+        val currentGeneration = generation.get()
         val segments = synchronized(vadLock) {
             vad.acceptWaveform(samples)
             buildList {
@@ -155,10 +175,19 @@ private class SherpaOfflineAsrEngine(
         }
         segments.forEach { segment ->
             executor.execute {
-                if (!closed.get()) {
-                    decodeSegment(segment.samples)
+                if (!closed.get() && currentGeneration == generation.get()) {
+                    decodeSegment(segment.samples, currentGeneration)
                 }
             }
+        }
+    }
+
+    override fun reset() {
+        if (closed.get()) return
+        generation.incrementAndGet()
+        synchronized(vadLock) {
+            vad.clear()
+            vad.reset()
         }
     }
 
@@ -171,13 +200,13 @@ private class SherpaOfflineAsrEngine(
         }
     }
 
-    private fun decodeSegment(samples: FloatArray) {
+    private fun decodeSegment(samples: FloatArray, decodeGeneration: Int) {
         val stream = recognizer.createStream()
         stream.acceptWaveform(samples, AudioCaptureEngine.SAMPLE_RATE)
         recognizer.decode(stream)
         val text = recognizer.getResult(stream).text
         stream.release()
-        if (!closed.get() && text.isNotBlank()) {
+        if (!closed.get() && decodeGeneration == generation.get() && text.isNotBlank()) {
             onEvent(AsrEvent.Text(text))
             onEvent(AsrEvent.SegmentFinished)
         }

@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
 import androidx.core.content.ContextCompat
 import com.typetype.droid.audio.AudioCaptureEngine
 import com.typetype.droid.input.AndroidInputConnectionAdapter
@@ -53,6 +54,7 @@ class VoiceImeService : InputMethodService() {
         inputView = VoiceInputView(this).apply {
             onMicClicked = { toggleListening() }
             onDeleteClicked = { deleteBeforeCursor() }
+            onDeleteAllClicked = { deleteAllText() }
         }
         inputView.render(sessionController.state)
         return inputView
@@ -115,6 +117,22 @@ class VoiceImeService : InputMethodService() {
 
     private fun deleteBeforeCursor() {
         currentInputConnection?.deleteSurroundingText(1, 0)
+    }
+
+    private fun deleteAllText() {
+        val inputConnection = currentInputConnection ?: return
+        val extractedText = inputConnection.getExtractedText(ExtractedTextRequest(), 0)
+        if (extractedText != null) {
+            val text = extractedText.text ?: return
+            val start = extractedText.startOffset
+            val end = start + text.length
+            inputConnection.beginBatchEdit()
+            inputConnection.setSelection(start, end)
+            inputConnection.commitText("", 1)
+            inputConnection.endBatchEdit()
+            return
+        }
+        inputConnection.deleteSurroundingText(Int.MAX_VALUE, Int.MAX_VALUE)
     }
 
     private fun inputViewOrNull(): VoiceInputView? = if (::inputView.isInitialized) inputView else null

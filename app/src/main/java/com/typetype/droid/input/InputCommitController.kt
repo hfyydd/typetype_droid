@@ -52,6 +52,11 @@ class InputCommitController(
 
     fun hasWrittenOutput(): Boolean = hasWrittenOutput
 
+    fun cursorIsAtStart(): Boolean {
+        val target = connection ?: return false
+        return target.getTextBeforeCursor(1)?.isEmpty() != false
+    }
+
     fun commitFinal(text: String): Boolean {
         val target = connection ?: return false
         if (text.isBlank()) return true
@@ -66,5 +71,10 @@ class InputCommitController(
     fun resetSession() {
         diffWriter.reset()
         streamingSuspendedUntilReset = false
+    }
+
+    fun resetAfterExternalCommit() {
+        resetSession()
+        hasWrittenOutput = false
     }
 }

@@ -33,4 +33,5 @@
     <string name="mic_start">开始语音</string>
     <string name="mic_stop">停止语音</string>
     <string name="delete_key">删除</string>
+    <string name="delete_all_key">全部删除</string>
 </resources>

@@ -28,6 +28,7 @@ class VoiceSessionController(
     private var connection: EditableInputConnection? = null
     private var preparedMode: DictationMode? = null
     private var preparingMode: DictationMode? = null
+    private var asrEventGeneration = 0
 
     fun setMode(mode: DictationMode) {
         if (state.isActive || state.phase == VoiceSessionState.Phase.PREPARING) return
@@ -49,19 +50,46 @@ class VoiceSessionController(
             SessionEvent.StartRequested -> startSession()
             SessionEvent.StopRequested -> stopSession()
             is SessionEvent.EditorSelectionChanged -> handleEditorSelectionChanged(event)
-            is SessionEvent.StreamingText -> commitController.writeStreaming(event.text)
+            is SessionEvent.StreamingText -> writeStreamingText(event.text)
             SessionEvent.StreamingSegmentFinished -> commitController.resetSession()
-            is SessionEvent.OfflineText -> commitController.commitFinal(event.text)
+            is SessionEvent.OfflineText -> writeOfflineText(event.text)
             is SessionEvent.Error -> fail(event.message)
         }
     }
 
+    private fun writeStreamingText(text: String) {
+        if (shouldTreatAsExternalCommitBoundary()) {
+            resetCurrentDictationSegment()
+            return
+        }
+        commitController.writeStreaming(text)
+    }
+
+    private fun writeOfflineText(text: String) {
+        if (shouldTreatAsExternalCommitBoundary()) {
+            resetCurrentDictationSegment()
+            return
+        }
+        commitController.commitFinal(text)
+    }
+
+    private fun shouldTreatAsExternalCommitBoundary(): Boolean {
+        return commitController.hasWrittenOutput() && commitController.cursorIsAtStart()
+    }
+
+    private fun resetCurrentDictationSegment() {
+        asrEventGeneration += 1
+        commitController.resetAfterExternalCommit()
+        engine?.reset()
+    }
+
     private fun handleEditorSelectionChanged(event: SessionEvent.EditorSelectionChanged) {
         if (!state.isActive) return
+        if (!commitController.hasWrittenOutput()) return
         val selectionMovedBackward = event.oldSelectionStart > 0 && event.newSelectionStart < event.oldSelectionStart
-        val fieldLikelyClearedAfterSend = commitController.hasWrittenOutput() && event.newSelectionStart == 0
+        val fieldLikelyClearedAfterSend = event.newSelectionStart == 0
         if (fieldLikelyClearedAfterSend || selectionMovedBackward || commitController.hasExternalChangeToStreamingText()) {
-            stopSession()
+            resetCurrentDictationSegment()
         }
     }
 
@@ -74,11 +102,7 @@ class VoiceSessionController(
         backgroundExecutor.execute prepareWork@{
             val startMs = SystemClock.elapsedRealtime()
             val nextEngine = try {
-                asrEngineFactory.create(requestedMode) { event ->
-                    stateExecutor.execute {
-                        handle(event.toSessionEvent(requestedMode))
-                    }
-                }
+                asrEngineFactory.create(requestedMode, asrEventHandler(requestedMode))
             } catch (error: Throwable) {
                 stateExecutor.execute {
                     if (preparingMode == requestedMode) {
@@ -157,9 +181,7 @@ class VoiceSessionController(
 
             val preparedEngine = liveEngine.get()
             val nextEngine = preparedEngine ?: try {
-                asrEngineFactory.create(requestedMode) { event ->
-                    stateExecutor.execute { handle(event.toSessionEvent(requestedMode)) }
-                }
+                asrEngineFactory.create(requestedMode, asrEventHandler(requestedMode))
             } catch (error: Throwable) {
                 stateExecutor.execute {
                     if (state.phase == VoiceSessionState.Phase.STARTING || state.phase == VoiceSessionState.Phase.LISTENING) {
@@ -194,6 +216,7 @@ class VoiceSessionController(
             val engineToClose = engine
             engine = null
             preparedMode = null
+            asrEventGeneration += 1
             commitController.detach()
             connection = null
             if (state.phase != VoiceSessionState.Phase.IDLE) {
@@ -209,6 +232,7 @@ class VoiceSessionController(
         engine = null
         preparedMode = null
         preparingMode = null
+        asrEventGeneration += 1
         commitController.resetSession()
         commitController.detach()
         connection = null
@@ -228,6 +252,7 @@ class VoiceSessionController(
         engine = null
         preparedMode = null
         preparingMode = null
+        asrEventGeneration += 1
         commitController.resetSession()
         backgroundExecutor.execute {
             audioCaptureEngine.stop()
@@ -251,6 +276,17 @@ class VoiceSessionController(
                 if (pendingSamples.isEmpty()) null else pendingSamples.removeFirst()
             } ?: return
             targetEngine.acceptSamples(samples)
+        }
+    }
+
+    private fun asrEventHandler(mode: DictationMode): (AsrEvent) -> Unit {
+        return { event ->
+            val eventGeneration = asrEventGeneration
+            stateExecutor.execute {
+                if (eventGeneration == asrEventGeneration) {
+                    handle(event.toSessionEvent(mode))
+                }
+            }
         }
     }
 
