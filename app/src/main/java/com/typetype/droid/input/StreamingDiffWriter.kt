@@ -11,6 +11,14 @@ class StreamingDiffWriter(
 ) {
     private var previousText: String = ""
 
+    fun hasActiveText(): Boolean = previousText.isNotEmpty()
+
+    fun fieldStillHasActiveText(connection: EditableInputConnection): Boolean {
+        if (previousText.isEmpty()) return true
+        val beforeCursor = connection.getTextBeforeCursor(previousText.length)?.toString() ?: return false
+        return beforeCursor == previousText
+    }
+
     fun nextEdit(nextText: String): StreamingEdit {
         val boundedPrefix = stablePrefix(previousText, nextText)
         val earliestRewriteIndex = (previousText.length - rewriteWindowChars).coerceAtLeast(0)

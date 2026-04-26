@@ -20,28 +20,94 @@ import java.util.concurrent.atomic.AtomicBoolean
 class SherpaAsrEngineFactory(
     private val assetManager: AssetManager,
 ) : AsrEngineFactory {
+    private val lock = Any()
+    private var streamingRecognizer: OnlineRecognizer? = null
+    private var offlineRecognizer: OfflineRecognizer? = null
+    private var vad: Vad? = null
+    private var closed = false
+
     override fun create(mode: DictationMode, onEvent: (AsrEvent) -> Unit): AsrEngine {
+        check(!closed) { "ASR engine factory is closed" }
         return when (mode) {
-            DictationMode.STREAMING -> SherpaStreamingAsrEngine(assetManager, onEvent)
-            DictationMode.OFFLINE -> SherpaOfflineAsrEngine(assetManager, onEvent)
+            DictationMode.STREAMING -> SherpaStreamingAsrEngine(
+                recognizer = streamingRecognizer(),
+                onEvent = onEvent,
+            )
+
+            DictationMode.OFFLINE -> SherpaOfflineAsrEngine(
+                recognizer = offlineRecognizer(),
+                vad = vad(),
+                vadLock = lock,
+                onEvent = onEvent,
+            )
+        }
+    }
+
+    fun warmUp(mode: DictationMode) {
+        check(!closed) { "ASR engine factory is closed" }
+        when (mode) {
+            DictationMode.STREAMING -> streamingRecognizer()
+            DictationMode.OFFLINE -> {
+                offlineRecognizer()
+                vad()
+            }
+        }
+    }
+
+    fun close() {
+        synchronized(lock) {
+            closed = true
+            streamingRecognizer?.release()
+            streamingRecognizer = null
+            offlineRecognizer?.release()
+            offlineRecognizer = null
+            vad?.release()
+            vad = null
+        }
+    }
+
+    private fun streamingRecognizer(): OnlineRecognizer {
+        synchronized(lock) {
+            return streamingRecognizer ?: OnlineRecognizer(
+                assetManager = assetManager,
+                config = OnlineRecognizerConfig(
+                    featConfig = getFeatureConfig(AudioCaptureEngine.SAMPLE_RATE, featureDim = 80),
+                    modelConfig = getModelConfig(STREAMING_ZH_MODEL_TYPE)
+                        ?: error("Missing streaming sherpa-onnx model config"),
+                    endpointConfig = getEndpointConfig(),
+                    enableEndpoint = true,
+                ),
+            ).also { streamingRecognizer = it }
+        }
+    }
+
+    private fun offlineRecognizer(): OfflineRecognizer {
+        synchronized(lock) {
+            return offlineRecognizer ?: OfflineRecognizer(
+                assetManager = assetManager,
+                config = OfflineRecognizerConfig(
+                    featConfig = getFeatureConfig(AudioCaptureEngine.SAMPLE_RATE, featureDim = 80),
+                    modelConfig = getOfflineModelConfig(OFFLINE_ZH_MODEL_TYPE)
+                        ?: error("Missing offline sherpa-onnx model config"),
+                ),
+            ).also { offlineRecognizer = it }
+        }
+    }
+
+    private fun vad(): Vad {
+        synchronized(lock) {
+            return vad ?: Vad(
+                assetManager = assetManager,
+                config = getVadModelConfig(VAD_MODEL_TYPE) ?: error("Missing VAD model config"),
+            ).also { vad = it }
         }
     }
 }
 
 private class SherpaStreamingAsrEngine(
-    assetManager: AssetManager,
+    private val recognizer: OnlineRecognizer,
     private val onEvent: (AsrEvent) -> Unit,
 ) : AsrEngine {
-    private val recognizer = OnlineRecognizer(
-        assetManager = assetManager,
-        config = OnlineRecognizerConfig(
-            featConfig = getFeatureConfig(AudioCaptureEngine.SAMPLE_RATE, featureDim = 80),
-            modelConfig = getModelConfig(STREAMING_ZH_MODEL_TYPE)
-                ?: error("Missing streaming sherpa-onnx model config"),
-            endpointConfig = getEndpointConfig(),
-            enableEndpoint = true,
-        ),
-    )
     private var stream = recognizer.createStream()
     private val closed = AtomicBoolean(false)
 
@@ -64,35 +130,30 @@ private class SherpaStreamingAsrEngine(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         stream.release()
-        recognizer.release()
     }
 }
 
 private class SherpaOfflineAsrEngine(
-    assetManager: AssetManager,
+    private val recognizer: OfflineRecognizer,
+    private val vad: Vad,
+    private val vadLock: Any,
     private val onEvent: (AsrEvent) -> Unit,
 ) : AsrEngine {
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private val closed = AtomicBoolean(false)
-    private val vad = Vad(
-        assetManager = assetManager,
-        config = getVadModelConfig(VAD_MODEL_TYPE) ?: error("Missing VAD model config"),
-    )
-    private val recognizer = OfflineRecognizer(
-        assetManager = assetManager,
-        config = OfflineRecognizerConfig(
-            featConfig = getFeatureConfig(AudioCaptureEngine.SAMPLE_RATE, featureDim = 80),
-            modelConfig = getOfflineModelConfig(OFFLINE_ZH_MODEL_TYPE)
-                ?: error("Missing offline sherpa-onnx model config"),
-        ),
-    )
 
     override fun acceptSamples(samples: FloatArray) {
         if (closed.get()) return
-        vad.acceptWaveform(samples)
-        while (!vad.empty()) {
-            val segment = vad.front()
-            vad.pop()
+        val segments = synchronized(vadLock) {
+            vad.acceptWaveform(samples)
+            buildList {
+                while (!vad.empty()) {
+                    add(vad.front())
+                    vad.pop()
+                }
+            }
+        }
+        segments.forEach { segment ->
             executor.execute {
                 if (!closed.get()) {
                     decodeSegment(segment.samples)
@@ -103,10 +164,11 @@ private class SherpaOfflineAsrEngine(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        vad.flush()
         executor.shutdownNow()
-        vad.release()
-        recognizer.release()
+        synchronized(vadLock) {
+            vad.clear()
+            vad.reset()
+        }
     }
 
     private fun decodeSegment(samples: FloatArray) {
@@ -115,7 +177,7 @@ private class SherpaOfflineAsrEngine(
         recognizer.decode(stream)
         val text = recognizer.getResult(stream).text
         stream.release()
-        if (text.isNotBlank()) {
+        if (!closed.get() && text.isNotBlank()) {
             onEvent(AsrEvent.Text(text))
             onEvent(AsrEvent.SegmentFinished)
         }

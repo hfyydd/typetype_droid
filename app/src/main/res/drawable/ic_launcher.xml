@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="rectangle">
-    <solid android:color="#137A63" />
-    <corners android:radius="8dp" />
-</shape>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F8F8F8"
+        android:pathData="M18,18h72a18,18 0,0 1,18 18v36a18,18 0,0 1,-18 18h-72a18,18 0,0 1,-18 -18v-36a18,18 0,0 1,18 -18z" />
+    <path
+        android:fillColor="#111111"
+        android:pathData="M54,28a12,12 0,0 1,12 12v18a12,12 0,0 1,-24 0v-18a12,12 0,0 1,12 -12zM36,55a4,4 0,0 1,4 4c0,7.7 6.3,14 14,14s14,-6.3 14,-14a4,4 0,0 1,8 0c0,10.8 -7.7,19.9 -18,21.8v7.2h8a4,4 0,0 1,0 8h-24a4,4 0,0 1,0 -8h8v-7.2c-10.3,-1.9 -18,-11 -18,-21.8a4,4 0,0 1,4 -4z" />
+    <path
+        android:fillColor="#111111"
+        android:pathData="M76,31c1.1,-1.1 2.9,-1.1 4,0 5.2,5.2 8,12.1 8,19.4s-2.8,14.2 -8,19.4c-1.1,1.1 -2.9,1.1 -4,0s-1.1,-2.9 0,-4c4.1,-4.1 6.3,-9.5 6.3,-15.4s-2.2,-11.3 -6.3,-15.4c-1.1,-1.1 -1.1,-2.9 0,-4zM28,31c1.1,1.1 1.1,2.9 0,4 -4.1,4.1 -6.3,9.5 -6.3,15.4s2.2,11.3 6.3,15.4c1.1,1.1 1.1,2.9 0,4s-2.9,1.1 -4,0c-5.2,-5.2 -8,-12.1 -8,-19.4s2.8,-14.2 8,-19.4c1.1,-1.1 2.9,-1.1 4,0z" />
+</vector>

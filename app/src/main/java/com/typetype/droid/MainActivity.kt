@@ -4,59 +4,474 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Gravity
+import android.view.View
 import android.view.inputmethod.InputMethodManager
-import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import com.typetype.droid.session.DictationMode
+import com.typetype.droid.settings.VoiceImePreferences
 
 class MainActivity : Activity() {
+    private lateinit var preferences: VoiceImePreferences
+    private lateinit var streamingOption: TextView
+    private lateinit var offlineOption: TextView
+
+    @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        preferences = VoiceImePreferences(this)
+        window.statusBarColor = COLOR_PAGE
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
 
-        val root = LinearLayout(this).apply {
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(48, 64, 48, 48)
+            setPadding(dp(22), dp(34), dp(22), dp(36))
+            setBackgroundColor(COLOR_PAGE)
         }
 
-        val title = TextView(this).apply {
-            text = getString(R.string.setup_title)
-            textSize = 26f
-        }
-        val body = TextView(this).apply {
-            text = getString(R.string.setup_body)
-            textSize = 16f
-            setPadding(0, 24, 0, 32)
-        }
-        val micButton = Button(this).apply {
-            text = getString(R.string.grant_mic)
-            setOnClickListener {
-                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                    requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
-                }
-            }
-        }
-        val settingsButton = Button(this).apply {
-            text = getString(R.string.open_input_settings)
-            setOnClickListener { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
-        }
-        val pickerButton = Button(this).apply {
-            text = getString(R.string.choose_input_method)
-            setOnClickListener {
-                getSystemService(InputMethodManager::class.java).showInputMethodPicker()
-            }
-        }
+        content.addView(header(), LinearLayout.LayoutParams.MATCH_PARENT, dp(98))
+        content.addView(heroCard(), LinearLayout.LayoutParams.MATCH_PARENT, dp(196))
+        content.addView(sectionTitle(getString(R.string.settings_section)))
+        content.addView(modeSelector(), LinearLayout.LayoutParams.MATCH_PARENT, dp(128))
+        content.addView(space(1, dp(16)))
+        content.addView(actionPanel())
 
-        root.addView(title)
-        root.addView(body)
-        root.addView(micButton)
-        root.addView(settingsButton)
-        root.addView(pickerButton)
-        setContentView(root)
+        setContentView(
+            ScrollView(this).apply {
+                setBackgroundColor(COLOR_PAGE)
+                addView(content)
+            },
+        )
     }
+
+    private fun header(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+
+            addView(
+                ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_launcher_mark)
+                    background = ovalDrawable(Color.WHITE)
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                },
+                LinearLayout.LayoutParams(dp(62), dp(62)),
+            )
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(18), 0, 0, 0)
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = getString(R.string.setup_title)
+                            textSize = 27f
+                            typeface = Typeface.DEFAULT_BOLD
+                            setTextColor(COLOR_TEXT)
+                        },
+                    )
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = getString(R.string.setup_subtitle)
+                            textSize = 16f
+                            setTextColor(COLOR_MUTED)
+                            setPadding(0, dp(5), 0, 0)
+                        },
+                    )
+                },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+        }
+    }
+
+    private fun heroCard(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(24), dp(22), dp(24), dp(22))
+            background = roundedDrawable(Color.WHITE, dp(22))
+            elevation = dp(2).toFloat()
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        ImageView(this@MainActivity).apply {
+                            setImageResource(R.drawable.ic_mic_line)
+                            setColorFilter(COLOR_ACCENT)
+                            background = roundedDrawable(COLOR_ACCENT_SOFT, dp(18))
+                            setPadding(dp(10), dp(10), dp(10), dp(10))
+                        },
+                        LinearLayout.LayoutParams(dp(52), dp(52)),
+                    )
+                    addView(
+                        LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            setPadding(dp(16), 0, 0, 0)
+                            addView(
+                                TextView(this@MainActivity).apply {
+                                    text = getString(R.string.hero_title)
+                                    textSize = 22f
+                                    typeface = Typeface.DEFAULT_BOLD
+                                    setTextColor(COLOR_TEXT)
+                                },
+                            )
+                            addView(
+                                TextView(this@MainActivity).apply {
+                                    text = getString(R.string.hero_subtitle)
+                                    textSize = 14f
+                                    setTextColor(COLOR_MUTED)
+                                    setPadding(0, dp(4), 0, 0)
+                                },
+                            )
+                        },
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                },
+            )
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = getString(R.string.hero_body)
+                    textSize = 15f
+                    setTextColor(COLOR_MUTED)
+                    setPadding(0, dp(8), 0, dp(18))
+                },
+            )
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(statusPill(getString(R.string.hero_chip_offline), true))
+                    addView(space(dp(10), 1))
+                    addView(statusPill(getString(R.string.hero_chip_streaming), false))
+                },
+            )
+        }
+    }
+
+    private fun actionPanel(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(
+                primaryActionCard(
+                    CardSpec(R.drawable.ic_switch_line, R.string.card_picker_title, R.string.card_picker_desc) {
+                        getSystemService(InputMethodManager::class.java).showInputMethodPicker()
+                    },
+                ),
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(118)).apply {
+                    bottomMargin = dp(16)
+                },
+            )
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(
+                        compactActionCard(
+                            CardSpec(R.drawable.ic_mic_line, R.string.card_voice_title, R.string.card_voice_desc) {
+                                requestMicPermission()
+                            },
+                        ),
+                        LinearLayout.LayoutParams(0, dp(150), 1f).apply { rightMargin = dp(10) },
+                    )
+                    addView(
+                        compactActionCard(
+                            CardSpec(R.drawable.ic_keyboard_line, R.string.card_ime_title, R.string.card_ime_desc) {
+                                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+                            },
+                        ),
+                        LinearLayout.LayoutParams(0, dp(150), 1f).apply { leftMargin = dp(10) },
+                    )
+                },
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+    }
+
+    private fun modeSelector(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            background = roundedDrawable(Color.WHITE, dp(20))
+            elevation = dp(1).toFloat()
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        ImageView(this@MainActivity).apply {
+                            setImageResource(R.drawable.ic_stream_line)
+                            setColorFilter(COLOR_ACCENT)
+                            background = roundedDrawable(COLOR_ACCENT_SOFT, dp(14))
+                            setPadding(dp(8), dp(8), dp(8), dp(8))
+                        },
+                        LinearLayout.LayoutParams(dp(40), dp(40)),
+                    )
+                    addView(
+                        LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            setPadding(dp(12), 0, 0, 0)
+                            addView(
+                                TextView(this@MainActivity).apply {
+                                    text = getString(R.string.mode_setting_title)
+                                    textSize = 18f
+                                    typeface = Typeface.DEFAULT_BOLD
+                                    setTextColor(COLOR_TEXT)
+                                    includeFontPadding = false
+                                },
+                            )
+                            addView(
+                                TextView(this@MainActivity).apply {
+                                    text = getString(R.string.mode_setting_desc)
+                                    textSize = 13.5f
+                                    setTextColor(COLOR_MUTED)
+                                    setPadding(0, dp(4), 0, 0)
+                                },
+                            )
+                        },
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                },
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, dp(14), 0, 0)
+                    streamingOption = modeOption(getString(R.string.mode_streaming)) {
+                        saveMode(DictationMode.STREAMING)
+                    }
+                    offlineOption = modeOption(getString(R.string.mode_offline)) {
+                        saveMode(DictationMode.OFFLINE)
+                    }
+                    addView(streamingOption, LinearLayout.LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(8) })
+                    addView(offlineOption, LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(8) })
+                },
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+
+            updateModeSelection(preferences.loadMode())
+        }
+    }
+
+    private fun modeOption(text: String, onClick: () -> Unit): TextView {
+        return TextView(this).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            isClickable = true
+            isFocusable = true
+            foreground = selectableForeground()
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun primaryActionCard(spec: CardSpec): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(20), dp(18), dp(18), dp(18))
+            background = roundedDrawable(Color.WHITE, dp(20))
+            elevation = dp(1).toFloat()
+            isClickable = true
+            isFocusable = true
+            foreground = selectableForeground()
+            setOnClickListener { spec.onClick() }
+
+            addView(
+                ImageView(this@MainActivity).apply {
+                    setImageResource(spec.icon)
+                    setColorFilter(Color.WHITE)
+                    background = roundedDrawable(COLOR_ACCENT, dp(18))
+                    setPadding(dp(12), dp(12), dp(12), dp(12))
+                },
+                LinearLayout.LayoutParams(dp(56), dp(56)),
+            )
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(16), 0, dp(12), 0)
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = getString(spec.title)
+                            textSize = 20f
+                            typeface = Typeface.DEFAULT_BOLD
+                            setTextColor(COLOR_TEXT)
+                            includeFontPadding = false
+                        },
+                    )
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = getString(spec.desc)
+                            textSize = 14f
+                            setTextColor(COLOR_MUTED)
+                            setPadding(0, dp(7), 0, 0)
+                        },
+                    )
+                },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(
+                ImageView(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_chevron_right_24)
+                    setColorFilter(COLOR_MUTED)
+                },
+                LinearLayout.LayoutParams(dp(24), dp(24)),
+            )
+        }
+    }
+
+    private fun compactActionCard(spec: CardSpec): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(18), dp(15), dp(16))
+            background = roundedDrawable(Color.WHITE, dp(18))
+            isClickable = true
+            isFocusable = true
+            foreground = selectableForeground()
+            setOnClickListener { spec.onClick() }
+
+            addView(
+                ImageView(this@MainActivity).apply {
+                    setImageResource(spec.icon)
+                    setColorFilter(COLOR_ICON)
+                },
+                LinearLayout.LayoutParams(dp(32), dp(32)),
+            )
+            addView(space(1, dp(20)))
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = getString(spec.title)
+                            textSize = 17f
+                            typeface = Typeface.DEFAULT_BOLD
+                            setTextColor(COLOR_TEXT)
+                            includeFontPadding = false
+                        },
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                    addView(
+                        ImageView(this@MainActivity).apply {
+                            setImageResource(R.drawable.ic_chevron_right_24)
+                            setColorFilter(COLOR_MUTED)
+                        },
+                        LinearLayout.LayoutParams(dp(18), dp(18)),
+                    )
+                },
+            )
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = getString(spec.desc)
+                    textSize = 13.5f
+                    setTextColor(COLOR_MUTED)
+                    setPadding(0, dp(7), 0, 0)
+                    setLineSpacing(dp(2).toFloat(), 1f)
+                },
+            )
+        }
+    }
+
+    private fun sectionTitle(text: String): View {
+        return TextView(this).apply {
+            this.text = text
+            textSize = 24f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(COLOR_TEXT)
+            setPadding(0, dp(34), 0, dp(18))
+        }
+    }
+
+    private fun statusPill(text: String, filled: Boolean): View {
+        return TextView(this).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (filled) Color.WHITE else COLOR_ACCENT)
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            background = roundedDrawable(if (filled) COLOR_ACCENT else COLOR_ACCENT_SOFT, dp(18))
+        }
+    }
+
+    private fun requestMicPermission() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
+        }
+    }
+
+    private fun saveMode(mode: DictationMode) {
+        preferences.saveMode(mode)
+        updateModeSelection(mode)
+        (application as TypeTypeApplication).warmUpAsr(mode)
+    }
+
+    private fun updateModeSelection(mode: DictationMode) {
+        styleModeOption(streamingOption, mode == DictationMode.STREAMING)
+        styleModeOption(offlineOption, mode == DictationMode.OFFLINE)
+    }
+
+    private fun styleModeOption(view: TextView, selected: Boolean) {
+        view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
+        view.background = roundedDrawable(if (selected) COLOR_TEXT else COLOR_PAGE, dp(14))
+    }
+
+    private fun space(width: Int, height: Int): View = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(width, height)
+    }
+
+    private fun roundedDrawable(color: Int, radius: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color)
+            cornerRadius = radius.toFloat()
+        }
+    }
+
+    private fun ovalDrawable(color: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
+        }
+    }
+
+    private fun selectableForeground() = obtainStyledAttributes(
+        intArrayOf(android.R.attr.selectableItemBackground),
+    ).let { attrs ->
+        attrs.getDrawable(0).also { attrs.recycle() }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private data class CardSpec(
+        val icon: Int,
+        val title: Int,
+        val desc: Int,
+        val onClick: () -> Unit,
+    )
 
     private companion object {
         const val REQUEST_RECORD_AUDIO = 1001
+        val COLOR_PAGE: Int = Color.rgb(232, 247, 244)
+        val COLOR_TEXT: Int = Color.rgb(25, 31, 30)
+        val COLOR_MUTED: Int = Color.rgb(143, 153, 151)
+        val COLOR_ICON: Int = Color.rgb(70, 76, 75)
+        val COLOR_ACCENT: Int = Color.rgb(15, 194, 147)
+        val COLOR_ACCENT_SOFT: Int = Color.rgb(222, 247, 240)
     }
 }

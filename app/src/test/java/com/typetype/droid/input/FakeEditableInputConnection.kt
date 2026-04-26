@@ -21,4 +21,8 @@ class FakeEditableInputConnection(initialText: String = "") : EditableInputConne
         if (length < 0 || length > buffer.length) return null
         return buffer.substring(buffer.length - length, buffer.length)
     }
+
+    fun clear() {
+        buffer.clear()
+    }
 }

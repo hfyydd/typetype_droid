@@ -62,8 +62,26 @@ class StreamingDiffWriterTest {
 
         assertTrue(controller.writeStreaming("今天天气"))
         controller.resetSession()
+        assertTrue(controller.hasWrittenOutput())
         assertTrue(controller.writeStreaming("不错"))
 
         assertEquals("今天天气不错", connection.text)
+    }
+
+    @Test
+    fun streamingDoesNotRestoreTextAfterHostClearsField() {
+        val connection = FakeEditableInputConnection()
+        val controller = InputCommitController()
+        controller.attach(connection)
+
+        assertTrue(controller.writeStreaming("今天天气"))
+        connection.clear()
+
+        assertEquals(false, controller.writeStreaming("今天天气不错"))
+        assertEquals("", connection.text)
+
+        controller.resetSession()
+        assertTrue(controller.writeStreaming("下一句"))
+        assertEquals("下一句", connection.text)
     }
 }

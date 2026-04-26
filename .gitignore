@@ -1,5 +1,6 @@
 .gradle/
 .omx/
+.artifacts/
 build/
 app/build/
 local.properties

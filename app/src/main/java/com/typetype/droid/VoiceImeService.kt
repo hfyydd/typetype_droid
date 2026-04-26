@@ -3,10 +3,11 @@ package com.typetype.droid
 import android.Manifest
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.core.content.ContextCompat
-import com.typetype.droid.asr.SherpaAsrEngineFactory
 import com.typetype.droid.audio.AudioCaptureEngine
 import com.typetype.droid.input.AndroidInputConnectionAdapter
 import com.typetype.droid.input.InputCommitController
@@ -14,31 +15,44 @@ import com.typetype.droid.session.SessionEvent
 import com.typetype.droid.session.VoiceSessionController
 import com.typetype.droid.settings.VoiceImePreferences
 import com.typetype.droid.ui.VoiceInputView
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class VoiceImeService : InputMethodService() {
     private lateinit var inputView: VoiceInputView
     private lateinit var sessionController: VoiceSessionController
     private lateinit var preferences: VoiceImePreferences
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val sessionExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "TypeTypeSession").apply { isDaemon = true }
+    }
 
     override fun onCreate() {
         super.onCreate()
         preferences = VoiceImePreferences(this)
+        val app = application as TypeTypeApplication
         sessionController = VoiceSessionController(
             audioCaptureEngine = AudioCaptureEngine(),
-            asrEngineFactory = SherpaAsrEngineFactory(application.assets),
+            asrEngineFactory = app.asrEngineFactory,
             commitController = InputCommitController(),
             onStateChanged = { state -> inputViewOrNull()?.render(state) },
+            backgroundExecutor = sessionExecutor,
+            stateExecutor = { action -> mainHandler.post(action) },
         )
-        sessionController.setMode(preferences.loadMode())
+        val mode = preferences.loadMode()
+        sessionController.setMode(mode)
+        app.warmUpAsr(mode)
+    }
+
+    override fun onDestroy() {
+        sessionExecutor.shutdown()
+        super.onDestroy()
     }
 
     override fun onCreateInputView(): View {
         inputView = VoiceInputView(this).apply {
             onMicClicked = { toggleListening() }
-            onModeChanged = { mode ->
-                sessionController.setMode(mode)
-                preferences.saveMode(sessionController.state.mode)
-            }
+            onDeleteClicked = { deleteBeforeCursor() }
         }
         inputView.render(sessionController.state)
         return inputView
@@ -52,6 +66,8 @@ class VoiceImeService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        sessionController.setMode(preferences.loadMode())
+        sessionController.handle(SessionEvent.PrepareRequested)
         inputViewOrNull()?.render(sessionController.state)
     }
 
@@ -63,6 +79,23 @@ class VoiceImeService : InputMethodService() {
     override fun onFinishInput() {
         sessionController.handle(SessionEvent.InputFinished)
         super.onFinishInput()
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        sessionController.handle(
+            SessionEvent.EditorSelectionChanged(
+                oldSelectionStart = oldSelStart,
+                newSelectionStart = newSelStart,
+            ),
+        )
     }
 
     private fun toggleListening() {
@@ -78,6 +111,10 @@ class VoiceImeService : InputMethodService() {
             sessionController.handle(SessionEvent.InputStarted(adapter))
             sessionController.handle(SessionEvent.StartRequested)
         }
+    }
+
+    private fun deleteBeforeCursor() {
+        currentInputConnection?.deleteSurroundingText(1, 0)
     }
 
     private fun inputViewOrNull(): VoiceInputView? = if (::inputView.isInitialized) inputView else null

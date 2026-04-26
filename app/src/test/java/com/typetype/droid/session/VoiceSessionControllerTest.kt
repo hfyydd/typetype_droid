@@ -36,6 +36,51 @@ class VoiceSessionControllerTest {
 
         assertEquals(DictationMode.OFFLINE, controller.state.mode)
     }
+
+    @Test
+    fun externalClearStopsActiveStreamingSession() {
+        val connection = FakeEditableInputConnection()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = FakeAsrEngineFactory(),
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.handle(SessionEvent.StreamingText("今天天气"))
+        connection.clear()
+        controller.handle(
+            SessionEvent.EditorSelectionChanged(
+                oldSelectionStart = 4,
+                newSelectionStart = 0,
+            ),
+        )
+
+        assertEquals(VoiceSessionState.Phase.IDLE, controller.state.phase)
+    }
+
+    @Test
+    fun externalSelectionShorteningStopsEvenAfterStreamingSessionReset() {
+        val connection = FakeEditableInputConnection()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = FakeAsrEngineFactory(),
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.handle(SessionEvent.StreamingText("今天天气"))
+        controller.handle(SessionEvent.StreamingSegmentFinished)
+        connection.clear()
+        controller.handle(
+            SessionEvent.EditorSelectionChanged(
+                oldSelectionStart = 4,
+                newSelectionStart = 0,
+            ),
+        )
+
+        assertEquals(VoiceSessionState.Phase.IDLE, controller.state.phase)
+    }
 }
 
 private class FakeAsrEngineFactory : AsrEngineFactory {
