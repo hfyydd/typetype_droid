@@ -46,7 +46,8 @@ class VoiceImeService : InputMethodService() {
     }
 
     override fun onDestroy() {
-        sessionExecutor.shutdown()
+        sessionExecutor.shutdownNow()
+        (application as TypeTypeApplication).close()
         super.onDestroy()
     }
 

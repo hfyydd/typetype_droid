@@ -1,5 +1,9 @@
 package com.typetype.droid.ui
 
+import android.animation.AnimatorSet
+import android.animation.ArgbEvaluator
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -8,6 +12,9 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -28,8 +35,15 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
     private var deleteRepeating = false
     private var deleteAllPopup: PopupWindow? = null
 
+    private var isRecording = false
+    private var micPulseAnimator: AnimatorSet? = null
+    private var dotPulseAnimator: AnimatorSet? = null
+    private var currentStatusText = ""
+
     private val statusDot = View(context).apply {
         background = ovalDrawable(COLOR_IDLE)
+        scaleX = 1f
+        scaleY = 1f
     }
     private val statusView = TextView(context).apply {
         gravity = Gravity.CENTER_VERTICAL
@@ -53,7 +67,6 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
         scaleType = ImageView.ScaleType.CENTER
         background = ovalDrawable(COLOR_ACCENT)
         setPadding(dp(20), dp(20), dp(20), dp(20))
-        setOnClickListener { onMicClicked?.invoke() }
     }
 
     init {
@@ -100,11 +113,47 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
             insets
         }
         ViewCompat.requestApplyInsets(this)
+
+        // Entrance animation - slide up and fade in
+        translationY = dp(60).toFloat()
+        alpha = 0f
+        animate()
+            .translationY(0f)
+            .alpha(1f)
+            .setDuration(350)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        // Add press feedback to mic button
+        micButton.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    micButton.animate()
+                        .scaleX(0.92f)
+                        .scaleY(0.92f)
+                        .setDuration(80)
+                        .setInterpolator(DecelerateInterpolator())
+                        .start()
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    micButton.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(150)
+                        .setInterpolator(OvershootInterpolator(2f))
+                        .start()
+                    if (event.action == MotionEvent.ACTION_UP) {
+                        onMicClicked?.invoke()
+                    }
+                }
+            }
+            true
+        }
     }
 
     fun render(state: VoiceSessionState) {
         val statusColor: Int
-        statusView.text = when {
+        val newStatusText = when {
             state.error != null -> {
                 statusColor = COLOR_RECORDING
                 context.getString(R.string.status_error)
@@ -126,17 +175,135 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
                 context.getString(R.string.status_idle)
             }
         }
-        statusDot.background = ovalDrawable(statusColor)
+
+        // Animate status text change
+        if (currentStatusText != newStatusText && currentStatusText.isNotEmpty()) {
+            animateStatusTextChange(newStatusText)
+        } else {
+            statusView.text = newStatusText
+        }
+        currentStatusText = newStatusText
+
+        // Animate status dot color change
+        animateStatusDotColor(statusColor)
+
+        // Mic button animations
         micButton.contentDescription = context.getString(if (state.isActive) R.string.mic_stop else R.string.mic_start)
-        micButton.background = roundedDrawable(
-            if (state.isActive) COLOR_RECORDING else COLOR_ACCENT,
-            dp(33),
-        )
+
+        val targetColor = if (state.isActive) COLOR_RECORDING else COLOR_ACCENT
+        if (isRecording != state.isActive) {
+            isRecording = state.isActive
+            animateMicButtonColor(targetColor)
+            if (state.isActive) {
+                startPulseAnimations()
+            } else {
+                stopPulseAnimations()
+            }
+        }
+    }
+
+    private fun animateStatusTextChange(newText: String) {
+        val fadeOut = ObjectAnimator.ofFloat(statusView, "alpha", 1f, 0f).apply {
+            duration = 120
+        }
+        val fadeIn = ObjectAnimator.ofFloat(statusView, "alpha", 0f, 1f).apply {
+            duration = 180
+        }
+        fadeOut.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                statusView.text = newText
+                fadeIn.start()
+            }
+        })
+        fadeOut.start()
+    }
+
+    private fun animateStatusDotColor(targetColor: Int) {
+        val currentDrawable = statusDot.background as? GradientDrawable ?: return
+        val startColor = currentDrawable.color ?: COLOR_IDLE
+        if (startColor == targetColor) return
+
+        ValueAnimator.ofObject(ArgbEvaluator(), startColor, targetColor).apply {
+            duration = 300
+            addUpdateListener { animator ->
+                currentDrawable.setColor(animator.animatedValue as Int)
+            }
+            start()
+        }
+    }
+
+    private fun animateMicButtonColor(targetColor: Int) {
+        val drawable = micButton.background as? GradientDrawable ?: return
+        val startColor = drawable.color ?: COLOR_ACCENT
+        if (startColor == targetColor) return
+
+        ValueAnimator.ofObject(ArgbEvaluator(), startColor, targetColor).apply {
+            duration = 350
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener { animator ->
+                drawable.setColor(animator.animatedValue as Int)
+            }
+            start()
+        }
+    }
+
+    private fun startPulseAnimations() {
+        // Mic button gentle pulse (breathing effect)
+        val micScaleX = ObjectAnimator.ofFloat(micButton, "scaleX", 1f, 1.06f, 1f).apply {
+            duration = 1200
+        }
+        val micScaleY = ObjectAnimator.ofFloat(micButton, "scaleY", 1f, 1.06f, 1f).apply {
+            duration = 1200
+        }
+        micPulseAnimator = AnimatorSet().apply {
+            playTogether(micScaleX, micScaleY)
+            interpolator = AccelerateDecelerateInterpolator()
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (isRecording) {
+                        animation.start()
+                    }
+                }
+            })
+            start()
+        }
+
+        // Status dot subtle pulse
+        val dotScaleX = ObjectAnimator.ofFloat(statusDot, "scaleX", 1f, 1.3f, 1f).apply {
+            duration = 1000
+        }
+        val dotScaleY = ObjectAnimator.ofFloat(statusDot, "scaleY", 1f, 1.3f, 1f).apply {
+            duration = 1000
+        }
+        dotPulseAnimator = AnimatorSet().apply {
+            playTogether(dotScaleX, dotScaleY)
+            interpolator = AccelerateDecelerateInterpolator()
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (isRecording) {
+                        animation.start()
+                    }
+                }
+            })
+            start()
+        }
+    }
+
+    private fun stopPulseAnimations() {
+        micPulseAnimator?.cancel()
+        micPulseAnimator = null
+        dotPulseAnimator?.cancel()
+        dotPulseAnimator = null
+
+        // Animate back to normal scale
+        micButton.animate().scaleX(1f).scaleY(1f).setDuration(200).setInterpolator(DecelerateInterpolator()).start()
+        statusDot.animate().scaleX(1f).scaleY(1f).setDuration(200).setInterpolator(DecelerateInterpolator()).start()
     }
 
     override fun onDetachedFromWindow() {
         stopDeleteRepeat()
         dismissDeleteAllPopup()
+        stopPulseAnimations()
         super.onDetachedFromWindow()
     }
 

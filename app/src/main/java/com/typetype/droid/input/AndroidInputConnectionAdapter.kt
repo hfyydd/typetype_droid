@@ -15,4 +15,8 @@ class AndroidInputConnectionAdapter(
     override fun getTextBeforeCursor(length: Int): CharSequence? {
         return inputConnection.getTextBeforeCursor(length, 0)
     }
+
+    override fun beginBatchEdit(): Boolean = inputConnection.beginBatchEdit()
+
+    override fun endBatchEdit(): Boolean = inputConnection.endBatchEdit()
 }

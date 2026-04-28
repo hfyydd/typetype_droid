@@ -31,4 +31,9 @@ class TypeTypeApplication : Application() {
             }
         }
     }
+
+    fun close() {
+        preloadExecutor.shutdownNow()
+        asrEngineFactory.close()
+    }
 }

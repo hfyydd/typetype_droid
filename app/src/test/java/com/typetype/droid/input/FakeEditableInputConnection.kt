@@ -22,6 +22,10 @@ class FakeEditableInputConnection(initialText: String = "") : EditableInputConne
         return buffer.substring(buffer.length - length, buffer.length)
     }
 
+    override fun beginBatchEdit(): Boolean = true
+
+    override fun endBatchEdit(): Boolean = true
+
     fun clear() {
         buffer.clear()
     }

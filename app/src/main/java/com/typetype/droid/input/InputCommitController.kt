@@ -28,21 +28,42 @@ class InputCommitController(
             return false
         }
         val edit = diffWriter.nextEdit(text)
-        if (!diffWriter.canApplyToField(target, edit)) {
-            streamingSuspendedUntilReset = true
-            diffWriter.reset()
+
+        if (diffWriter.hasActiveText()) {
+            val cachedBeforeCursor = target.getTextBeforeCursor(edit.deleteChars)?.toString()
+            if (cachedBeforeCursor == null) {
+                streamingSuspendedUntilReset = true
+                diffWriter.reset()
+                return false
+            }
+            if (!textStartsWith(cachedBeforeCursor, edit.expectedDeletedText)) {
+                streamingSuspendedUntilReset = true
+                diffWriter.reset()
+                return false
+            }
+        }
+
+        if (!target.beginBatchEdit()) {
             return false
         }
-        if (!target.deleteBeforeCursor(edit.deleteChars)) {
-            streamingSuspendedUntilReset = true
-            diffWriter.reset()
-            return false
+        try {
+            if (edit.deleteChars > 0 && !target.deleteBeforeCursor(edit.deleteChars)) {
+                streamingSuspendedUntilReset = true
+                diffWriter.reset()
+                return false
+            }
+            val committed = edit.insertText.isEmpty() || target.commitText(edit.insertText)
+            if (committed && (edit.insertText.isNotEmpty() || edit.deleteChars > 0)) {
+                hasWrittenOutput = true
+            }
+            return committed
+        } finally {
+            target.endBatchEdit()
         }
-        val committed = edit.insertText.isEmpty() || target.commitText(edit.insertText)
-        if (committed && (edit.insertText.isNotEmpty() || edit.deleteChars > 0)) {
-            hasWrittenOutput = true
-        }
-        return committed
+    }
+
+    private fun textStartsWith(text: String, prefix: String): Boolean {
+        return text.length >= prefix.length && text.substring(0, prefix.length) == prefix
     }
 
     fun hasExternalChangeToStreamingText(): Boolean {

@@ -9,9 +9,9 @@ import com.typetype.droid.asr.AsrEngineFactory
 import com.typetype.droid.audio.AudioCaptureEngine
 import com.typetype.droid.input.EditableInputConnection
 import com.typetype.droid.input.InputCommitController
-import java.util.ArrayDeque
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
+import com.typetype.droid.input.CircularAudioBuffer
 
 class VoiceSessionController(
     private val audioCaptureEngine: AudioCaptureEngine,
@@ -141,8 +141,7 @@ class VoiceSessionController(
         val requestedMode = state.mode
         backgroundExecutor.execute startWork@{
             val startMs = SystemClock.elapsedRealtime()
-            val pendingSamples = ArrayDeque<FloatArray>()
-            val pendingSamplesLock = Any()
+            val pendingSamples = CircularAudioBuffer(MAX_PENDING_AUDIO_CHUNKS)
             val liveEngine = AtomicReference<AsrEngine?>()
             engine?.takeIf { preparedMode == requestedMode }?.let(liveEngine::set)
 
@@ -152,12 +151,7 @@ class VoiceSessionController(
                 if (targetEngine != null) {
                     targetEngine.acceptSamples(samples)
                 } else {
-                    synchronized(pendingSamplesLock) {
-                        if (pendingSamples.size >= MAX_PENDING_AUDIO_CHUNKS) {
-                            pendingSamples.removeFirst()
-                        }
-                        pendingSamples.addLast(samples.copyOf())
-                    }
+                    pendingSamples.add(samples)
                 }
             }
             val audioReadyMs = SystemClock.elapsedRealtime()
@@ -192,7 +186,7 @@ class VoiceSessionController(
             }
             val engineReadyMs = SystemClock.elapsedRealtime()
             liveEngine.set(nextEngine)
-            drainPendingSamples(pendingSamples, pendingSamplesLock, nextEngine)
+            drainPendingSamples(pendingSamples, nextEngine)
             Log.d(
                 TAG,
                 "startSession mode=$requestedMode audio=${audioReadyMs - startMs}ms engine=${engineReadyMs - audioReadyMs}ms",
@@ -267,14 +261,10 @@ class VoiceSessionController(
     }
 
     private fun drainPendingSamples(
-        pendingSamples: ArrayDeque<FloatArray>,
-        pendingSamplesLock: Any,
+        pendingSamples: CircularAudioBuffer,
         targetEngine: AsrEngine,
     ) {
-        while (true) {
-            val samples = synchronized(pendingSamplesLock) {
-                if (pendingSamples.isEmpty()) null else pendingSamples.removeFirst()
-            } ?: return
+        pendingSamples.drain { samples ->
             targetEngine.acceptSamples(samples)
         }
     }

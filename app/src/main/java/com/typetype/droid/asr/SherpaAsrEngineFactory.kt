@@ -1,6 +1,8 @@
 package com.typetype.droid.asr
 
+import android.annotation.SuppressLint
 import android.content.res.AssetManager
+import android.os.SystemClock
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
@@ -113,24 +115,47 @@ private class SherpaStreamingAsrEngine(
     private val closed = AtomicBoolean(false)
     private val generation = AtomicInteger(0)
 
+    private var lastTextEventTimeMs = 0L
+    private var pendingText: String? = null
+
+    @SuppressLint("DefaultLocale")
     override fun acceptSamples(samples: FloatArray) {
+        if (closed.get()) return
+        val currentGeneration = generation.get()
+
+        stream.acceptWaveform(samples, AudioCaptureEngine.SAMPLE_RATE)
+
+        val result: String
+        val shouldReset: Boolean
         synchronized(this) {
             if (closed.get()) return
-            val currentGeneration = generation.get()
-            stream.acceptWaveform(samples, AudioCaptureEngine.SAMPLE_RATE)
             while (recognizer.isReady(stream)) {
                 recognizer.decode(stream)
             }
             if (closed.get() || currentGeneration != generation.get()) return
-            val result = recognizer.getResult(stream).text
-            if (result.isNotBlank()) {
-                onEvent(AsrEvent.Text(result))
-            }
-            if (closed.get() || currentGeneration != generation.get()) return
-            if (recognizer.isEndpoint(stream)) {
+            result = recognizer.getResult(stream).text
+            shouldReset = recognizer.isEndpoint(stream)
+            if (shouldReset) {
                 recognizer.reset(stream)
-                onEvent(AsrEvent.SegmentFinished)
             }
+        }
+
+        if (result.isNotBlank()) {
+            val now = SystemClock.elapsedRealtime()
+            val elapsed = now - lastTextEventTimeMs
+            if (elapsed >= MIN_TEXT_EVENT_INTERVAL_MS) {
+                onEvent(AsrEvent.Text(result))
+                lastTextEventTimeMs = now
+                pendingText = null
+            } else {
+                pendingText = result
+            }
+        }
+        if (shouldReset) {
+            pendingText?.let { onEvent(AsrEvent.Text(it)) }
+            pendingText = null
+            lastTextEventTimeMs = SystemClock.elapsedRealtime()
+            onEvent(AsrEvent.SegmentFinished)
         }
     }
 
@@ -216,3 +241,4 @@ private class SherpaOfflineAsrEngine(
 private const val STREAMING_ZH_MODEL_TYPE = 9
 private const val OFFLINE_ZH_MODEL_TYPE = 0
 private const val VAD_MODEL_TYPE = 0
+private const val MIN_TEXT_EVENT_INTERVAL_MS = 100L

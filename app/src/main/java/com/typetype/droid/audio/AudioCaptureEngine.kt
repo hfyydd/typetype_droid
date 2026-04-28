@@ -13,6 +13,9 @@ class AudioCaptureEngine {
     private var audioRecord: AudioRecord? = null
     private var recordingThread: Thread? = null
 
+    private val shortBufferPool = ThreadLocal.withInitial { ShortArray(BUFFER_SAMPLES) }
+    private val floatBufferPool = ThreadLocal.withInitial { FloatArray(BUFFER_SAMPLES) }
+
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun start(onSamples: (FloatArray) -> Unit): Boolean {
         if (!isRecording.compareAndSet(false, true)) return false
@@ -63,12 +66,15 @@ class AudioCaptureEngine {
     }
 
     private fun readLoop(recorder: AudioRecord, onSamples: (FloatArray) -> Unit) {
-        val buffer = ShortArray(BUFFER_SAMPLES)
+        val shortBuffer = shortBufferPool.get()!!
+        val floatBuffer = floatBufferPool.get()!!
         while (isRecording.get()) {
-            val read = recorder.read(buffer, 0, buffer.size)
+            val read = recorder.read(shortBuffer, 0, shortBuffer.size)
             if (read > 0) {
-                val samples = FloatArray(read) { index -> buffer[index] / 32768.0f }
-                onSamples(samples)
+                for (i in 0 until read) {
+                    floatBuffer[i] = shortBuffer[i] / 32768.0f
+                }
+                onSamples(floatBuffer)
             }
         }
     }
