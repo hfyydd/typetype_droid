@@ -43,5 +43,6 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation("com.google.mlkit:translate:17.0.3")
     testImplementation(libs.junit)
 }

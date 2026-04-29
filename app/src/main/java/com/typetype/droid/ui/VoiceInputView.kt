@@ -39,6 +39,8 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
     private var micPulseAnimator: AnimatorSet? = null
     private var dotPulseAnimator: AnimatorSet? = null
     private var currentStatusText = ""
+    private var currentStatusDotColor = COLOR_IDLE
+    private var currentMicButtonColor = COLOR_ACCENT
 
     private val statusDot = View(context).apply {
         background = ovalDrawable(COLOR_IDLE)
@@ -162,6 +164,10 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
                 statusColor = COLOR_PREPARING
                 context.getString(R.string.status_preparing)
             }
+            state.phase == VoiceSessionState.Phase.TRANSLATING -> {
+                statusColor = COLOR_PREPARING
+                context.getString(R.string.status_translating)
+            }
             state.isDecoding -> {
                 statusColor = COLOR_ACCENT
                 context.getString(R.string.status_decoding)
@@ -220,13 +226,15 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
 
     private fun animateStatusDotColor(targetColor: Int) {
         val currentDrawable = statusDot.background as? GradientDrawable ?: return
-        val startColor = currentDrawable.color ?: COLOR_IDLE
+        val startColor = currentStatusDotColor
         if (startColor == targetColor) return
 
         ValueAnimator.ofObject(ArgbEvaluator(), startColor, targetColor).apply {
             duration = 300
             addUpdateListener { animator ->
-                currentDrawable.setColor(animator.animatedValue as Int)
+                val color = animator.animatedValue as Int
+                currentStatusDotColor = color
+                currentDrawable.setColor(color)
             }
             start()
         }
@@ -234,14 +242,16 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
 
     private fun animateMicButtonColor(targetColor: Int) {
         val drawable = micButton.background as? GradientDrawable ?: return
-        val startColor = drawable.color ?: COLOR_ACCENT
+        val startColor = currentMicButtonColor
         if (startColor == targetColor) return
 
         ValueAnimator.ofObject(ArgbEvaluator(), startColor, targetColor).apply {
             duration = 350
             interpolator = AccelerateDecelerateInterpolator()
             addUpdateListener { animator ->
-                drawable.setColor(animator.animatedValue as Int)
+                val color = animator.animatedValue as Int
+                currentMicButtonColor = color
+                drawable.setColor(color)
             }
             start()
         }

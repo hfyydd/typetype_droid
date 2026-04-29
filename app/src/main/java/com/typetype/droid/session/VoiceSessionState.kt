@@ -6,13 +6,16 @@ data class VoiceSessionState(
     val error: String? = null,
 ) {
     val isActive: Boolean
-        get() = phase == Phase.STARTING || phase == Phase.LISTENING || phase == Phase.DECODING
+        get() = phase == Phase.STARTING ||
+            phase == Phase.LISTENING ||
+            phase == Phase.DECODING ||
+            phase == Phase.TRANSLATING
 
     val isPreparing: Boolean
         get() = phase == Phase.PREPARING || phase == Phase.STARTING
 
     val isDecoding: Boolean
-        get() = phase == Phase.DECODING
+        get() = phase == Phase.DECODING || phase == Phase.TRANSLATING
 
     enum class Phase {
         IDLE,
@@ -21,6 +24,7 @@ data class VoiceSessionState(
         STARTING,
         LISTENING,
         DECODING,
+        TRANSLATING,
         STOPPING,
         ERROR,
     }

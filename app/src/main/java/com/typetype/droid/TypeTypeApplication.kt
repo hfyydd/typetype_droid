@@ -4,11 +4,16 @@ import android.app.Application
 import com.typetype.droid.asr.SherpaAsrEngineFactory
 import com.typetype.droid.session.DictationMode
 import com.typetype.droid.settings.VoiceImePreferences
+import com.typetype.droid.translation.MlKitTranslationEngine
+import com.typetype.droid.translation.TranslationOutputMode
+import com.typetype.droid.translation.TranslationTargetLanguage
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class TypeTypeApplication : Application() {
     lateinit var asrEngineFactory: SherpaAsrEngineFactory
+        private set
+    lateinit var translationEngine: MlKitTranslationEngine
         private set
 
     private val preloadExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
@@ -21,7 +26,13 @@ class TypeTypeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         asrEngineFactory = SherpaAsrEngineFactory(assets)
-        warmUpAsr(VoiceImePreferences(this).loadMode())
+        translationEngine = MlKitTranslationEngine()
+        val preferences = VoiceImePreferences(this)
+        warmUpAsr(preferences.loadMode())
+        val translationSettings = preferences.loadTranslationSettings()
+        if (translationSettings.outputMode == TranslationOutputMode.TRANSLATION) {
+            warmUpTranslation(translationSettings.targetLanguage)
+        }
     }
 
     fun warmUpAsr(mode: DictationMode) {
@@ -32,8 +43,17 @@ class TypeTypeApplication : Application() {
         }
     }
 
+    fun warmUpTranslation(targetLanguage: TranslationTargetLanguage) {
+        preloadExecutor.execute {
+            runCatching {
+                translationEngine.warmUp(targetLanguage)
+            }
+        }
+    }
+
     fun close() {
         preloadExecutor.shutdownNow()
+        translationEngine.close()
         asrEngineFactory.close()
     }
 }

@@ -13,8 +13,12 @@ class AudioCaptureEngine {
     private var audioRecord: AudioRecord? = null
     private var recordingThread: Thread? = null
 
-    private val shortBufferPool = ThreadLocal.withInitial { ShortArray(BUFFER_SAMPLES) }
-    private val floatBufferPool = ThreadLocal.withInitial { FloatArray(BUFFER_SAMPLES) }
+    private val shortBufferPool = object : ThreadLocal<ShortArray>() {
+        override fun initialValue(): ShortArray = ShortArray(BUFFER_SAMPLES)
+    }
+    private val floatBufferPool = object : ThreadLocal<FloatArray>() {
+        override fun initialValue(): FloatArray = FloatArray(BUFFER_SAMPLES)
+    }
 
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun start(onSamples: (FloatArray) -> Unit): Boolean {

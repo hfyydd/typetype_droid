@@ -18,11 +18,19 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.typetype.droid.session.DictationMode
 import com.typetype.droid.settings.VoiceImePreferences
+import com.typetype.droid.translation.TranslationOutputMode
+import com.typetype.droid.translation.TranslationSettings
+import com.typetype.droid.translation.TranslationTargetLanguage
 
 class MainActivity : Activity() {
     private lateinit var preferences: VoiceImePreferences
     private lateinit var streamingOption: TextView
     private lateinit var offlineOption: TextView
+    private lateinit var dictationOutputOption: TextView
+    private lateinit var translationOutputOption: TextView
+    private lateinit var englishTargetOption: TextView
+    private lateinit var japaneseTargetOption: TextView
+    private lateinit var germanTargetOption: TextView
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,6 +49,8 @@ class MainActivity : Activity() {
         content.addView(heroCard(), LinearLayout.LayoutParams.MATCH_PARENT, dp(196))
         content.addView(sectionTitle(getString(R.string.settings_section)))
         content.addView(modeSelector(), LinearLayout.LayoutParams.MATCH_PARENT, dp(128))
+        content.addView(space(1, dp(16)))
+        content.addView(translationSelector(), LinearLayout.LayoutParams.MATCH_PARENT, dp(194))
         content.addView(space(1, dp(16)))
         content.addView(actionPanel())
 
@@ -266,6 +276,107 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun translationSelector(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            background = roundedDrawable(Color.WHITE, dp(20))
+            elevation = dp(1).toFloat()
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        ImageView(this@MainActivity).apply {
+                            setImageResource(R.drawable.ic_switch_line)
+                            setColorFilter(COLOR_ACCENT)
+                            background = roundedDrawable(COLOR_ACCENT_SOFT, dp(14))
+                            setPadding(dp(8), dp(8), dp(8), dp(8))
+                        },
+                        LinearLayout.LayoutParams(dp(40), dp(40)),
+                    )
+                    addView(
+                        LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            setPadding(dp(12), 0, 0, 0)
+                            addView(
+                                TextView(this@MainActivity).apply {
+                                    text = getString(R.string.translation_setting_title)
+                                    textSize = 18f
+                                    typeface = Typeface.DEFAULT_BOLD
+                                    setTextColor(COLOR_TEXT)
+                                    includeFontPadding = false
+                                },
+                            )
+                            addView(
+                                TextView(this@MainActivity).apply {
+                                    text = getString(R.string.translation_setting_desc)
+                                    textSize = 13.5f
+                                    setTextColor(COLOR_MUTED)
+                                    setPadding(0, dp(4), 0, 0)
+                                },
+                            )
+                        },
+                        LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+                    )
+                },
+            )
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, dp(14), 0, 0)
+                    dictationOutputOption = modeOption(getString(R.string.output_dictation)) {
+                        saveTranslationOutputMode(TranslationOutputMode.DICTATION)
+                    }
+                    translationOutputOption = modeOption(getString(R.string.output_translation)) {
+                        saveTranslationOutputMode(TranslationOutputMode.TRANSLATION)
+                    }
+                    addView(dictationOutputOption, LinearLayout.LayoutParams(0, dp(42), 1f).apply { rightMargin = dp(8) })
+                    addView(translationOutputOption, LinearLayout.LayoutParams(0, dp(42), 1f).apply { leftMargin = dp(8) })
+                },
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = getString(R.string.translation_target_desc)
+                    textSize = 13f
+                    setTextColor(COLOR_MUTED)
+                    setPadding(0, dp(14), 0, 0)
+                },
+            )
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, dp(12), 0, 0)
+                    englishTargetOption = modeOption(getString(R.string.translation_target_english)) {
+                        saveTranslationTargetLanguage(TranslationTargetLanguage.ENGLISH)
+                    }
+                    japaneseTargetOption = modeOption(getString(R.string.translation_target_japanese)) {
+                        saveTranslationTargetLanguage(TranslationTargetLanguage.JAPANESE)
+                    }
+                    germanTargetOption = modeOption(getString(R.string.translation_target_german)) {
+                        saveTranslationTargetLanguage(TranslationTargetLanguage.GERMAN)
+                    }
+                    addView(englishTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(6) })
+                    addView(japaneseTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                        leftMargin = dp(3)
+                        rightMargin = dp(3)
+                    })
+                    addView(germanTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(6) })
+                },
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+
+            updateTranslationSelection(preferences.loadTranslationSettings())
+        }
+    }
+
     private fun modeOption(text: String, onClick: () -> Unit): TextView {
         return TextView(this).apply {
             this.text = text
@@ -421,14 +532,50 @@ class MainActivity : Activity() {
         (application as TypeTypeApplication).warmUpAsr(mode)
     }
 
+    private fun saveTranslationOutputMode(mode: TranslationOutputMode) {
+        preferences.saveTranslationOutputMode(mode)
+        val settings = preferences.loadTranslationSettings().copy(outputMode = mode)
+        updateTranslationSelection(settings)
+        if (mode == TranslationOutputMode.TRANSLATION) {
+            (application as TypeTypeApplication).warmUpTranslation(settings.targetLanguage)
+        }
+    }
+
+    private fun saveTranslationTargetLanguage(targetLanguage: TranslationTargetLanguage) {
+        preferences.saveTranslationTargetLanguage(targetLanguage)
+        val settings = preferences.loadTranslationSettings().copy(targetLanguage = targetLanguage)
+        updateTranslationSelection(settings)
+        if (settings.outputMode == TranslationOutputMode.TRANSLATION) {
+            (application as TypeTypeApplication).warmUpTranslation(targetLanguage)
+        }
+    }
+
     private fun updateModeSelection(mode: DictationMode) {
         styleModeOption(streamingOption, mode == DictationMode.STREAMING)
         styleModeOption(offlineOption, mode == DictationMode.OFFLINE)
     }
 
+    private fun updateTranslationSelection(settings: TranslationSettings) {
+        styleModeOption(dictationOutputOption, settings.outputMode == TranslationOutputMode.DICTATION)
+        styleModeOption(translationOutputOption, settings.outputMode == TranslationOutputMode.TRANSLATION)
+        styleModeOption(englishTargetOption, settings.targetLanguage == TranslationTargetLanguage.ENGLISH)
+        styleModeOption(japaneseTargetOption, settings.targetLanguage == TranslationTargetLanguage.JAPANESE)
+        styleModeOption(germanTargetOption, settings.targetLanguage == TranslationTargetLanguage.GERMAN)
+
+        val translationEnabled = settings.outputMode == TranslationOutputMode.TRANSLATION
+        setTargetOptionEnabled(englishTargetOption, translationEnabled)
+        setTargetOptionEnabled(japaneseTargetOption, translationEnabled)
+        setTargetOptionEnabled(germanTargetOption, translationEnabled)
+    }
+
     private fun styleModeOption(view: TextView, selected: Boolean) {
         view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
         view.background = roundedDrawable(if (selected) COLOR_TEXT else COLOR_PAGE, dp(14))
+    }
+
+    private fun setTargetOptionEnabled(view: TextView, enabled: Boolean) {
+        view.isEnabled = enabled
+        view.alpha = if (enabled) 1f else 0.45f
     }
 
     private fun space(width: Int, height: Int): View = View(this).apply {

@@ -9,16 +9,22 @@ import com.typetype.droid.asr.AsrEngineFactory
 import com.typetype.droid.audio.AudioCaptureEngine
 import com.typetype.droid.input.EditableInputConnection
 import com.typetype.droid.input.InputCommitController
+import com.typetype.droid.input.CircularAudioBuffer
+import com.typetype.droid.translation.TranslationEngine
+import com.typetype.droid.translation.TranslationOutputMode
+import com.typetype.droid.translation.TranslationSettings
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicReference
-import com.typetype.droid.input.CircularAudioBuffer
 
 class VoiceSessionController(
     private val audioCaptureEngine: AudioCaptureEngine,
     private val asrEngineFactory: AsrEngineFactory,
     private val commitController: InputCommitController,
+    private val translationSettingsProvider: () -> TranslationSettings = { TranslationSettings() },
+    private val translationEngine: TranslationEngine? = null,
     private val onStateChanged: (VoiceSessionState) -> Unit = {},
     private val backgroundExecutor: Executor = Executor { it.run() },
+    private val translationExecutor: Executor = backgroundExecutor,
     private val stateExecutor: Executor = Executor { it.run() },
 ) {
     var state: VoiceSessionState = VoiceSessionState()
@@ -70,7 +76,54 @@ class VoiceSessionController(
             resetCurrentDictationSegment()
             return
         }
+        if (text.isBlank()) return
+        val translationSettings = translationSettingsProvider()
+        if (translationSettings.outputMode == TranslationOutputMode.TRANSLATION) {
+            if (state.mode != DictationMode.OFFLINE) {
+                fail("翻译输出仅支持稳妥模式")
+                return
+            }
+            translateOfflineText(text, translationSettings)
+            return
+        }
         commitController.commitFinal(text)
+    }
+
+    private fun translateOfflineText(
+        text: String,
+        translationSettings: TranslationSettings,
+    ) {
+        val targetLanguage = translationSettings.targetLanguage
+        val currentGeneration = asrEventGeneration
+        update(state.copy(phase = VoiceSessionState.Phase.TRANSLATING, error = null))
+        translationExecutor.execute translateWork@{
+            val translated = try {
+                translationEngine?.translate(text, targetLanguage)
+                    ?: error("Translation engine is unavailable")
+            } catch (error: Throwable) {
+                stateExecutor.execute {
+                    if (currentGeneration == asrEventGeneration) {
+                        fail(error.message ?: "翻译失败")
+                    }
+                }
+                return@translateWork
+            }
+            stateExecutor.execute applyTranslation@{
+                if (currentGeneration != asrEventGeneration) return@applyTranslation
+                if (translated.isBlank()) {
+                    fail("本地翻译没有返回 ${targetLanguage.label} 文本")
+                    return@applyTranslation
+                }
+                if (shouldTreatAsExternalCommitBoundary()) {
+                    resetCurrentDictationSegment()
+                    return@applyTranslation
+                }
+                commitController.commitFinal(translated)
+                if (state.phase == VoiceSessionState.Phase.TRANSLATING) {
+                    update(state.copy(phase = VoiceSessionState.Phase.LISTENING, error = null))
+                }
+            }
+        }
     }
 
     private fun shouldTreatAsExternalCommitBoundary(): Boolean {

@@ -12,9 +12,11 @@ import androidx.core.content.ContextCompat
 import com.typetype.droid.audio.AudioCaptureEngine
 import com.typetype.droid.input.AndroidInputConnectionAdapter
 import com.typetype.droid.input.InputCommitController
+import com.typetype.droid.session.DictationMode
 import com.typetype.droid.session.SessionEvent
 import com.typetype.droid.session.VoiceSessionController
 import com.typetype.droid.settings.VoiceImePreferences
+import com.typetype.droid.translation.TranslationOutputMode
 import com.typetype.droid.ui.VoiceInputView
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -27,6 +29,9 @@ class VoiceImeService : InputMethodService() {
     private val sessionExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "TypeTypeSession").apply { isDaemon = true }
     }
+    private val translationExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "TypeTypeTranslation").apply { isDaemon = true }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -36,17 +41,22 @@ class VoiceImeService : InputMethodService() {
             audioCaptureEngine = AudioCaptureEngine(),
             asrEngineFactory = app.asrEngineFactory,
             commitController = InputCommitController(),
+            translationSettingsProvider = { preferences.loadTranslationSettings() },
+            translationEngine = app.translationEngine,
             onStateChanged = { state -> inputViewOrNull()?.render(state) },
             backgroundExecutor = sessionExecutor,
+            translationExecutor = translationExecutor,
             stateExecutor = { action -> mainHandler.post(action) },
         )
         val mode = preferences.loadMode()
         sessionController.setMode(mode)
         app.warmUpAsr(mode)
+        warmUpTranslationIfNeeded()
     }
 
     override fun onDestroy() {
         sessionExecutor.shutdownNow()
+        translationExecutor.shutdownNow()
         (application as TypeTypeApplication).close()
         super.onDestroy()
     }
@@ -70,6 +80,7 @@ class VoiceImeService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         sessionController.setMode(preferences.loadMode())
+        warmUpTranslationIfNeeded()
         sessionController.handle(SessionEvent.PrepareRequested)
         inputViewOrNull()?.render(sessionController.state)
     }
@@ -106,6 +117,13 @@ class VoiceImeService : InputMethodService() {
             sessionController.handle(SessionEvent.Error("Microphone permission is missing"))
             return
         }
+        if (
+            preferences.loadTranslationSettings().outputMode == TranslationOutputMode.TRANSLATION &&
+            preferences.loadMode() != DictationMode.OFFLINE
+        ) {
+            sessionController.handle(SessionEvent.Error(getString(R.string.translation_requires_offline)))
+            return
+        }
 
         if (sessionController.state.isActive) {
             sessionController.handle(SessionEvent.StopRequested)
@@ -134,6 +152,13 @@ class VoiceImeService : InputMethodService() {
             return
         }
         inputConnection.deleteSurroundingText(Int.MAX_VALUE, Int.MAX_VALUE)
+    }
+
+    private fun warmUpTranslationIfNeeded() {
+        val settings = preferences.loadTranslationSettings()
+        if (settings.outputMode == TranslationOutputMode.TRANSLATION) {
+            (application as TypeTypeApplication).warmUpTranslation(settings.targetLanguage)
+        }
     }
 
     private fun inputViewOrNull(): VoiceInputView? = if (::inputView.isInitialized) inputView else null
