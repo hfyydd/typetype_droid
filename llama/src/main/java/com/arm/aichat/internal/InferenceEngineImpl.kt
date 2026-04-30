@@ -3,6 +3,7 @@ package com.arm.aichat.internal
 import android.content.Context
 import android.util.Log
 import com.arm.aichat.InferenceEngine
+import com.arm.aichat.ModelLoadException
 import com.arm.aichat.UnsupportedArchitectureException
 import com.arm.aichat.internal.InferenceEngineImpl.Companion.getInstance
 import kotlinx.coroutines.CancellationException
@@ -153,9 +154,8 @@ internal class InferenceEngineImpl private constructor(
                 Log.i(TAG, "Loading model... \n$pathToModel")
                 _readyForSystemPrompt = false
                 _state.value = InferenceEngine.State.LoadingModel
-                load(pathToModel).let {
-                    // TODO-han.yin: find a better way to pass other error codes
-                    if (it != 0) throw UnsupportedArchitectureException()
+                load(pathToModel).let { result ->
+                    if (result != 0) throw ModelLoadException(result)
                 }
                 prepare().let {
                     if (it != 0) throw IOException("Failed to prepare resources")

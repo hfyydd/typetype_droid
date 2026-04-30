@@ -51,6 +51,14 @@ Java_com_arm_aichat_internal_InferenceEngineImpl_init(JNIEnv *env, jobject /*unu
     ggml_backend_load_all_from_path(path_to_backend);
     env->ReleaseStringUTFChars(nativeLibDir, path_to_backend);
 
+    // Log loaded backends
+    const size_t n_backends = ggml_backend_reg_count();
+    LOGi("Total backends loaded: %zu", n_backends);
+    for (size_t i = 0; i < n_backends; i++) {
+        auto *reg = ggml_backend_reg_get(i);
+        LOGi("  Backend %zu: %s", i, ggml_backend_reg_name(reg));
+    }
+
     // Initialize backends
     llama_backend_init();
     LOGi("Backend initiated; Log handler set.");
@@ -61,15 +69,32 @@ JNIEXPORT jint JNICALL
 Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstring jmodel_path) {
     llama_model_params model_params = llama_model_default_params();
 
+    // Disable mmap on Android to avoid potential file system issues
+    model_params.use_mmap = false;
+
     const auto *model_path = env->GetStringUTFChars(jmodel_path, 0);
-    LOGd("%s: Loading model from: \n%s\n", __func__, model_path);
+    LOGi("%s: Loading model from: \n%s\n", __func__, model_path);
+    LOGi("%s: ggml_backend_reg_count=%zu", __func__, ggml_backend_reg_count());
 
     auto *model = llama_model_load_from_file(model_path, model_params);
     env->ReleaseStringUTFChars(jmodel_path, model_path);
     if (!model) {
+        // Log detailed error info from llama
+        LOGe("%s: llama_model_load_from_file returned NULL", __func__);
+        char model_desc[128];
+        llama_model_desc(nullptr, model_desc, sizeof(model_desc));
+        LOGe("%s: Model description: %s", __func__, model_desc);
         return 1;
     }
     g_model = model;
+
+    // Log model info
+    char model_desc[128];
+    llama_model_desc(model, model_desc, sizeof(model_desc));
+    const auto model_size = double(llama_model_size(model)) / 1024.0 / 1024.0 / 1024.0;
+    const auto n_params = double(llama_model_n_params(model)) / 1e9;
+    LOGi("%s: Model loaded: %s (%.2f GiB, %.2fB params)", __func__, model_desc, model_size, n_params);
+
     return 0;
 }
 

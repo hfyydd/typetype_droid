@@ -4,7 +4,7 @@ import android.app.Application
 import com.typetype.droid.asr.SherpaAsrEngineFactory
 import com.typetype.droid.session.DictationMode
 import com.typetype.droid.settings.VoiceImePreferences
-import com.typetype.droid.translation.FallbackTranslationEngine
+import com.typetype.droid.translation.TranslationBackend
 import com.typetype.droid.translation.HyMtTranslationEngine
 import com.typetype.droid.translation.TranslationEngine
 import com.typetype.droid.translation.MlKitTranslationEngine
@@ -16,7 +16,9 @@ import java.util.concurrent.Executors
 class TypeTypeApplication : Application() {
     lateinit var asrEngineFactory: SherpaAsrEngineFactory
         private set
-    lateinit var translationEngine: TranslationEngine
+    lateinit var hyMtTranslationEngine: TranslationEngine
+        private set
+    lateinit var mlKitTranslationEngine: TranslationEngine
         private set
 
     private val preloadExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
@@ -29,15 +31,13 @@ class TypeTypeApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         asrEngineFactory = SherpaAsrEngineFactory(assets)
-        translationEngine = FallbackTranslationEngine(
-            primary = HyMtTranslationEngine(this),
-            fallback = MlKitTranslationEngine(),
-        )
+        hyMtTranslationEngine = HyMtTranslationEngine(this)
+        mlKitTranslationEngine = MlKitTranslationEngine()
         val preferences = VoiceImePreferences(this)
         warmUpAsr(preferences.loadEffectiveMode())
         val translationSettings = preferences.loadTranslationSettings()
         if (translationSettings.outputMode == TranslationOutputMode.TRANSLATION) {
-            warmUpTranslation(translationSettings.targetLanguage)
+            warmUpTranslation(translationSettings.backend, translationSettings.targetLanguage)
         }
     }
 
@@ -49,17 +49,28 @@ class TypeTypeApplication : Application() {
         }
     }
 
-    fun warmUpTranslation(targetLanguage: TranslationTargetLanguage) {
+    fun warmUpTranslation(
+        backend: TranslationBackend,
+        targetLanguage: TranslationTargetLanguage,
+    ) {
         preloadExecutor.execute {
             runCatching {
-                translationEngine.warmUp(targetLanguage)
+                translationEngineFor(backend).warmUp(targetLanguage)
             }
+        }
+    }
+
+    fun translationEngineFor(backend: TranslationBackend): TranslationEngine {
+        return when (backend) {
+            TranslationBackend.HY_MT -> hyMtTranslationEngine
+            TranslationBackend.ML_KIT -> mlKitTranslationEngine
         }
     }
 
     fun close() {
         preloadExecutor.shutdownNow()
-        translationEngine.close()
+        hyMtTranslationEngine.close()
+        mlKitTranslationEngine.close()
         asrEngineFactory.close()
     }
 }

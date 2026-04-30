@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -52,6 +53,16 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
         textSize = 12.5f
         setTextColor(COLOR_MUTED)
         includeFontPadding = false
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+    }
+    private val errorDetailView = TextView(context).apply {
+        textSize = 11.5f
+        setTextColor(COLOR_ERROR_TEXT)
+        includeFontPadding = false
+        maxLines = 2
+        ellipsize = TextUtils.TruncateAt.END
+        visibility = GONE
     }
     private val deleteButton = ImageButton(context).apply {
         contentDescription = context.getString(R.string.delete_key)
@@ -97,11 +108,17 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
 
         val micRow = LinearLayout(context).apply {
             gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(6), 0, 0)
         }
         micRow.addView(micButton, LayoutParams(dp(72), dp(72)))
 
         addView(topRow, LayoutParams(LayoutParams.MATCH_PARENT, dp(40)))
+        addView(
+            errorDetailView,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(4)
+            },
+        )
         addView(micRow, LayoutParams(LayoutParams.MATCH_PARENT, dp(80)))
 
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
@@ -189,6 +206,14 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
             statusView.text = newStatusText
         }
         currentStatusText = newStatusText
+
+        if (state.error != null) {
+            errorDetailView.text = state.error
+            errorDetailView.visibility = VISIBLE
+        } else {
+            errorDetailView.text = ""
+            errorDetailView.visibility = GONE
+        }
 
         // Animate status dot color change
         animateStatusDotColor(statusColor)
@@ -447,6 +472,7 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
         val COLOR_DELETE_KEY: Int = Color.rgb(244, 246, 250)
         val COLOR_DELETE_ICON: Int = Color.rgb(104, 112, 123)
         val COLOR_DELETE_ALL: Int = Color.rgb(33, 37, 43)
+        val COLOR_ERROR_TEXT: Int = Color.rgb(140, 42, 34)
         val COLOR_PREPARING: Int = Color.rgb(232, 149, 44)
         val COLOR_ACCENT: Int = Color.rgb(15, 194, 147)
         val COLOR_RECORDING: Int = Color.rgb(203, 72, 63)

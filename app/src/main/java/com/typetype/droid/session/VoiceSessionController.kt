@@ -11,6 +11,7 @@ import com.typetype.droid.input.EditableInputConnection
 import com.typetype.droid.input.InputCommitController
 import com.typetype.droid.input.CircularAudioBuffer
 import com.typetype.droid.translation.TranslationEngine
+import com.typetype.droid.translation.TranslationEngineResolver
 import com.typetype.droid.translation.TranslationOutputMode
 import com.typetype.droid.translation.TranslationSettings
 import java.util.concurrent.Executor
@@ -21,7 +22,7 @@ class VoiceSessionController(
     private val asrEngineFactory: AsrEngineFactory,
     private val commitController: InputCommitController,
     private val translationSettingsProvider: () -> TranslationSettings = { TranslationSettings() },
-    private val translationEngine: TranslationEngine? = null,
+    private val translationEngineResolver: TranslationEngineResolver? = null,
     private val onStateChanged: (VoiceSessionState) -> Unit = {},
     private val backgroundExecutor: Executor = Executor { it.run() },
     private val translationExecutor: Executor = backgroundExecutor,
@@ -94,6 +95,7 @@ class VoiceSessionController(
         translationSettings: TranslationSettings,
     ) {
         val targetLanguage = translationSettings.targetLanguage
+        val translationEngine = translationEngineResolver?.resolve(translationSettings.backend)
         val currentGeneration = asrEventGeneration
         update(state.copy(phase = VoiceSessionState.Phase.TRANSLATING, error = null))
         translationExecutor.execute translateWork@{

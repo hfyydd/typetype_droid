@@ -16,18 +16,27 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import com.typetype.droid.session.DictationMode
 import com.typetype.droid.settings.VoiceImePreferences
+import com.typetype.droid.translation.TranslationBackend
 import com.typetype.droid.translation.TranslationOutputMode
 import com.typetype.droid.translation.TranslationSettings
 import com.typetype.droid.translation.TranslationTargetLanguage
 
 class MainActivity : Activity() {
+    private val baseHorizontalPadding by lazy { dp(20) }
+    private val baseTopPadding by lazy { dp(30) }
+    private val baseBottomPadding by lazy { dp(34) }
     private lateinit var preferences: VoiceImePreferences
     private lateinit var streamingOption: TextView
     private lateinit var offlineOption: TextView
     private lateinit var dictationOutputOption: TextView
     private lateinit var translationOutputOption: TextView
+    private lateinit var hyMtBackendOption: TextView
+    private lateinit var mlKitBackendOption: TextView
     private lateinit var englishTargetOption: TextView
     private lateinit var japaneseTargetOption: TextView
     private lateinit var germanTargetOption: TextView
@@ -42,14 +51,44 @@ class MainActivity : Activity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(34), dp(22), dp(36))
+            setPadding(baseHorizontalPadding, baseTopPadding, baseHorizontalPadding, baseBottomPadding)
             setBackgroundColor(COLOR_PAGE)
         }
 
-        content.addView(header(), LinearLayout.LayoutParams.MATCH_PARENT, dp(98))
-        content.addView(heroCard(), LinearLayout.LayoutParams.MATCH_PARENT, dp(196))
+        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(
+                top = baseTopPadding + systemBars.top,
+                bottom = baseBottomPadding + systemBars.bottom,
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(content)
+
+        content.addView(
+            header(),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                bottomMargin = dp(12)
+            },
+        )
+        content.addView(
+            heroCard(),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
         content.addView(sectionTitle(getString(R.string.settings_section)))
-        content.addView(modeSelector(), LinearLayout.LayoutParams.MATCH_PARENT, dp(128))
+        content.addView(
+            modeSelector(),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
         content.addView(space(1, dp(16)))
         content.addView(
             translationSelector(),
@@ -78,6 +117,7 @@ class MainActivity : Activity() {
                 ImageView(this@MainActivity).apply {
                     setImageResource(R.drawable.ic_launcher_mark)
                     background = ovalDrawable(Color.WHITE)
+                    elevation = dp(2).toFloat()
                     setPadding(dp(12), dp(12), dp(12), dp(12))
                 },
                 LinearLayout.LayoutParams(dp(62), dp(62)),
@@ -90,17 +130,37 @@ class MainActivity : Activity() {
                     addView(
                         TextView(this@MainActivity).apply {
                             text = getString(R.string.setup_title)
-                            textSize = 27f
+                            textSize = 24f
                             typeface = Typeface.DEFAULT_BOLD
                             setTextColor(COLOR_TEXT)
+                            includeFontPadding = false
+                            setLineSpacing(dp(2).toFloat(), 1f)
                         },
                     )
                     addView(
                         TextView(this@MainActivity).apply {
                             text = getString(R.string.setup_subtitle)
-                            textSize = 16f
+                            textSize = 14f
                             setTextColor(COLOR_MUTED)
-                            setPadding(0, dp(5), 0, 0)
+                            includeFontPadding = false
+                            setPadding(0, dp(4), 0, 0)
+                        },
+                    )
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = "纯语音输入 · HY-MT 翻译"
+                            textSize = 12f
+                            setTextColor(COLOR_ACCENT_DEEP)
+                            includeFontPadding = false
+                            background = roundedDrawable(Color.WHITE, dp(12))
+                            setPadding(dp(10), dp(5), dp(10), dp(5))
+                        }.apply {
+                            val params = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                            )
+                            params.topMargin = dp(10)
+                            layoutParams = params
                         },
                     )
                 },
@@ -113,9 +173,9 @@ class MainActivity : Activity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(24), dp(22), dp(24), dp(22))
-            background = roundedDrawable(Color.WHITE, dp(22))
-            elevation = dp(2).toFloat()
+            setPadding(dp(24), dp(22), dp(24), dp(24))
+            background = heroBackground()
+            elevation = dp(3).toFloat()
 
             addView(
                 LinearLayout(this@MainActivity).apply {
@@ -124,9 +184,9 @@ class MainActivity : Activity() {
                     addView(
                         ImageView(this@MainActivity).apply {
                             setImageResource(R.drawable.ic_mic_line)
-                            setColorFilter(COLOR_ACCENT)
-                            background = roundedDrawable(COLOR_ACCENT_SOFT, dp(18))
-                            setPadding(dp(10), dp(10), dp(10), dp(10))
+                            setColorFilter(Color.WHITE)
+                            background = roundedDrawable(COLOR_ACCENT_DEEP, dp(18))
+                            setPadding(dp(11), dp(11), dp(11), dp(11))
                         },
                         LinearLayout.LayoutParams(dp(52), dp(52)),
                     )
@@ -146,7 +206,7 @@ class MainActivity : Activity() {
                                 TextView(this@MainActivity).apply {
                                     text = getString(R.string.hero_subtitle)
                                     textSize = 14f
-                                    setTextColor(COLOR_MUTED)
+                                    setTextColor(COLOR_MUTED_DARK)
                                     setPadding(0, dp(4), 0, 0)
                                 },
                             )
@@ -159,8 +219,9 @@ class MainActivity : Activity() {
                 TextView(this@MainActivity).apply {
                     text = getString(R.string.hero_body)
                     textSize = 15f
-                    setTextColor(COLOR_MUTED)
-                    setPadding(0, dp(8), 0, dp(18))
+                    setTextColor(COLOR_MUTED_DARK)
+                    setLineSpacing(dp(2).toFloat(), 1f)
+                    setPadding(0, dp(10), 0, dp(18))
                 },
             )
             addView(
@@ -169,6 +230,14 @@ class MainActivity : Activity() {
                     addView(statusPill(getString(R.string.hero_chip_offline), true))
                     addView(space(dp(10), 1))
                     addView(statusPill(getString(R.string.hero_chip_streaming), false))
+                },
+            )
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = "翻译模式会自动切换到稳妥模式"
+                    textSize = 12.5f
+                    setTextColor(COLOR_ACCENT_DEEP)
+                    setPadding(0, dp(14), 0, 0)
                 },
             )
         }
@@ -216,8 +285,8 @@ class MainActivity : Activity() {
     private fun modeSelector(): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            background = roundedDrawable(Color.WHITE, dp(20))
+            setPadding(dp(18), dp(16), dp(18), dp(18))
+            background = sectionCardBackground()
             elevation = dp(1).toFloat()
 
             addView(
@@ -286,8 +355,8 @@ class MainActivity : Activity() {
     private fun translationSelector(): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            background = roundedDrawable(Color.WHITE, dp(20))
+            setPadding(dp(18), dp(16), dp(18), dp(18))
+            background = sectionCardBackground()
             elevation = dp(1).toFloat()
 
             addView(
@@ -352,8 +421,36 @@ class MainActivity : Activity() {
                     text = getString(R.string.translation_target_desc)
                     textSize = 13f
                     setTextColor(COLOR_MUTED)
+                    setLineSpacing(dp(2).toFloat(), 1f)
                     setPadding(0, dp(14), 0, 0)
                 },
+            )
+
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = getString(R.string.translation_backend_desc)
+                    textSize = 13f
+                    setTextColor(COLOR_MUTED)
+                    setLineSpacing(dp(2).toFloat(), 1f)
+                    setPadding(0, dp(14), 0, 0)
+                },
+            )
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, dp(12), 0, 0)
+                    hyMtBackendOption = modeOption(getString(R.string.translation_backend_hymt)) {
+                        saveTranslationBackend(TranslationBackend.HY_MT)
+                    }
+                    mlKitBackendOption = modeOption(getString(R.string.translation_backend_mlkit)) {
+                        saveTranslationBackend(TranslationBackend.ML_KIT)
+                    }
+                    addView(hyMtBackendOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(6) })
+                    addView(mlKitBackendOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(6) })
+                },
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
             )
 
             addView(
@@ -412,7 +509,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(20), dp(18), dp(18), dp(18))
-            background = roundedDrawable(Color.WHITE, dp(20))
+            background = sectionCardBackground()
             elevation = dp(1).toFloat()
             isClickable = true
             isFocusable = true
@@ -423,7 +520,7 @@ class MainActivity : Activity() {
                 ImageView(this@MainActivity).apply {
                     setImageResource(spec.icon)
                     setColorFilter(Color.WHITE)
-                    background = roundedDrawable(COLOR_ACCENT, dp(18))
+                    background = roundedDrawable(COLOR_TEXT, dp(18))
                     setPadding(dp(12), dp(12), dp(12), dp(12))
                 },
                 LinearLayout.LayoutParams(dp(56), dp(56)),
@@ -466,7 +563,7 @@ class MainActivity : Activity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(18), dp(15), dp(16))
-            background = roundedDrawable(Color.WHITE, dp(18))
+            background = sectionCardBackground()
             isClickable = true
             isFocusable = true
             foreground = selectableForeground()
@@ -518,10 +615,10 @@ class MainActivity : Activity() {
     private fun sectionTitle(text: String): View {
         return TextView(this).apply {
             this.text = text
-            textSize = 24f
+            textSize = 25f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(COLOR_TEXT)
-            setPadding(0, dp(34), 0, dp(18))
+            setPadding(dp(2), dp(34), 0, dp(18))
         }
     }
 
@@ -532,8 +629,10 @@ class MainActivity : Activity() {
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(if (filled) Color.WHITE else COLOR_ACCENT)
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            background = roundedDrawable(if (filled) COLOR_ACCENT else COLOR_ACCENT_SOFT, dp(18))
+            includeFontPadding = false
+            minHeight = dp(36)
+            setPadding(dp(16), dp(7), dp(16), dp(7))
+            background = roundedDrawable(if (filled) COLOR_ACCENT_DEEP else Color.WHITE, dp(18))
         }
     }
 
@@ -556,8 +655,27 @@ class MainActivity : Activity() {
         updateTranslationSelection(settings)
         updateModeSelection(preferences.loadEffectiveMode(), settings)
         if (mode == TranslationOutputMode.TRANSLATION) {
-            (application as TypeTypeApplication).warmUpTranslation(settings.targetLanguage)
+            (application as TypeTypeApplication).warmUpTranslation(settings.backend, settings.targetLanguage)
             (application as TypeTypeApplication).warmUpAsr(DictationMode.OFFLINE)
+        }
+    }
+
+    private fun saveTranslationBackend(backend: TranslationBackend) {
+        preferences.saveTranslationBackend(backend)
+        val previous = preferences.loadTranslationSettings()
+        val adjustedTarget = if (backend == TranslationBackend.ML_KIT && previous.targetLanguage == TranslationTargetLanguage.CANTONESE) {
+            TranslationTargetLanguage.ENGLISH
+        } else {
+            previous.targetLanguage
+        }
+        if (adjustedTarget != previous.targetLanguage) {
+            preferences.saveTranslationTargetLanguage(adjustedTarget)
+        }
+        val settings = previous.copy(backend = backend, targetLanguage = adjustedTarget)
+        updateTranslationSelection(settings)
+        updateModeSelection(preferences.loadEffectiveMode(), settings)
+        if (settings.outputMode == TranslationOutputMode.TRANSLATION) {
+            (application as TypeTypeApplication).warmUpTranslation(backend, settings.targetLanguage)
         }
     }
 
@@ -567,7 +685,7 @@ class MainActivity : Activity() {
         updateTranslationSelection(settings)
         updateModeSelection(preferences.loadEffectiveMode(), settings)
         if (settings.outputMode == TranslationOutputMode.TRANSLATION) {
-            (application as TypeTypeApplication).warmUpTranslation(targetLanguage)
+            (application as TypeTypeApplication).warmUpTranslation(settings.backend, targetLanguage)
         }
     }
 
@@ -581,21 +699,25 @@ class MainActivity : Activity() {
     private fun updateTranslationSelection(settings: TranslationSettings) {
         styleModeOption(dictationOutputOption, settings.outputMode == TranslationOutputMode.DICTATION)
         styleModeOption(translationOutputOption, settings.outputMode == TranslationOutputMode.TRANSLATION)
+        styleModeOption(hyMtBackendOption, settings.backend == TranslationBackend.HY_MT)
+        styleModeOption(mlKitBackendOption, settings.backend == TranslationBackend.ML_KIT)
         styleModeOption(englishTargetOption, settings.targetLanguage == TranslationTargetLanguage.ENGLISH)
         styleModeOption(japaneseTargetOption, settings.targetLanguage == TranslationTargetLanguage.JAPANESE)
         styleModeOption(germanTargetOption, settings.targetLanguage == TranslationTargetLanguage.GERMAN)
         styleModeOption(cantoneseTargetOption, settings.targetLanguage == TranslationTargetLanguage.CANTONESE)
 
         val translationEnabled = settings.outputMode == TranslationOutputMode.TRANSLATION
+        setTargetOptionEnabled(hyMtBackendOption, translationEnabled)
+        setTargetOptionEnabled(mlKitBackendOption, translationEnabled)
         setTargetOptionEnabled(englishTargetOption, translationEnabled)
         setTargetOptionEnabled(japaneseTargetOption, translationEnabled)
         setTargetOptionEnabled(germanTargetOption, translationEnabled)
-        setTargetOptionEnabled(cantoneseTargetOption, translationEnabled)
+        setTargetOptionEnabled(cantoneseTargetOption, translationEnabled && settings.backend == TranslationBackend.HY_MT)
     }
 
     private fun styleModeOption(view: TextView, selected: Boolean) {
         view.setTextColor(if (selected) Color.WHITE else COLOR_TEXT)
-        view.background = roundedDrawable(if (selected) COLOR_TEXT else COLOR_PAGE, dp(14))
+        view.background = roundedDrawable(if (selected) COLOR_TEXT else Color.rgb(245, 247, 249), dp(14))
     }
 
     private fun setTargetOptionEnabled(view: TextView, enabled: Boolean) {
@@ -612,6 +734,25 @@ class MainActivity : Activity() {
             shape = GradientDrawable.RECTANGLE
             setColor(color)
             cornerRadius = radius.toFloat()
+        }
+    }
+
+    private fun sectionCardBackground(): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(Color.WHITE)
+            cornerRadius = dp(20).toFloat()
+            setStroke(dp(1), Color.rgb(224, 229, 232))
+        }
+    }
+
+    private fun heroBackground(): GradientDrawable {
+        return GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(Color.rgb(248, 253, 250), Color.rgb(228, 245, 239)),
+        ).apply {
+            cornerRadius = dp(22).toFloat()
+            setStroke(dp(1), Color.rgb(213, 233, 226))
         }
     }
 
@@ -642,8 +783,10 @@ class MainActivity : Activity() {
         val COLOR_PAGE: Int = Color.rgb(232, 247, 244)
         val COLOR_TEXT: Int = Color.rgb(25, 31, 30)
         val COLOR_MUTED: Int = Color.rgb(143, 153, 151)
+        val COLOR_MUTED_DARK: Int = Color.rgb(109, 122, 119)
         val COLOR_ICON: Int = Color.rgb(70, 76, 75)
         val COLOR_ACCENT: Int = Color.rgb(15, 194, 147)
+        val COLOR_ACCENT_DEEP: Int = Color.rgb(11, 149, 113)
         val COLOR_ACCENT_SOFT: Int = Color.rgb(222, 247, 240)
     }
 }

@@ -41,7 +41,7 @@ class VoiceImeService : InputMethodService() {
             asrEngineFactory = app.asrEngineFactory,
             commitController = InputCommitController(),
             translationSettingsProvider = { preferences.loadTranslationSettings() },
-            translationEngine = app.translationEngine,
+            translationEngineResolver = { backend -> app.translationEngineFor(backend) },
             onStateChanged = { state -> inputViewOrNull()?.render(state) },
             backgroundExecutor = sessionExecutor,
             translationExecutor = translationExecutor,
@@ -148,7 +148,7 @@ class VoiceImeService : InputMethodService() {
     private fun warmUpTranslationIfNeeded() {
         val settings = preferences.loadTranslationSettings()
         if (settings.outputMode == TranslationOutputMode.TRANSLATION) {
-            (application as TypeTypeApplication).warmUpTranslation(settings.targetLanguage)
+            (application as TypeTypeApplication).warmUpTranslation(settings.backend, settings.targetLanguage)
         }
     }
 

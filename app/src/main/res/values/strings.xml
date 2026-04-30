@@ -18,7 +18,9 @@
     <string name="mode_setting_title">听写模式</string>
     <string name="mode_setting_desc">设置后在语音输入法面板中生效</string>
     <string name="translation_setting_title">输出内容</string>
-    <string name="translation_setting_desc">翻译输出会在本地识别完成后再写入；默认优先使用内置 HY-MT，本地失败时再回退到轻量翻译后端。</string>
+    <string name="translation_setting_desc">翻译输出会在本地识别完成后再写入；你可以在 HY-MT 和 ML Kit 两个翻译后端之间切换。</string>
+    <string name="translation_backend_title">翻译后端</string>
+    <string name="translation_backend_desc">HY-MT 为内置离线模型，ML Kit 更轻量；ML Kit 不支持粤语目标语言。</string>
     <string name="translation_target_title">翻译语言</string>
     <string name="translation_target_desc">翻译流程默认按“中文 -> 目标语言”。当前支持英语、日语、德语，粤语为实验性目标语言。</string>
     <string name="card_voice_title">麦克风权限</string>
@@ -35,6 +37,8 @@
     <string name="translation_target_japanese">日语</string>
     <string name="translation_target_german">德语</string>
     <string name="translation_target_cantonese">粤语</string>
+    <string name="translation_backend_hymt">HY-MT</string>
+    <string name="translation_backend_mlkit">ML Kit</string>
     <string name="status_idle">待机</string>
     <string name="status_preparing">启动中</string>
     <string name="status_listening">正在听</string>

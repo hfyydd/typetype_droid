@@ -87,3 +87,7 @@ val State.isModelLoaded: Boolean
         this is State.Generating
 
 class UnsupportedArchitectureException : Exception()
+
+class ModelLoadException(
+    val code: Int,
+) : Exception("Native model load failed with code=$code")

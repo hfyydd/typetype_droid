@@ -2,6 +2,7 @@ package com.typetype.droid.settings
 
 import android.content.Context
 import com.typetype.droid.session.DictationMode
+import com.typetype.droid.translation.TranslationBackend
 import com.typetype.droid.translation.TranslationOutputMode
 import com.typetype.droid.translation.TranslationSettings
 import com.typetype.droid.translation.TranslationTargetLanguage
@@ -34,6 +35,11 @@ class VoiceImePreferences(context: Context) {
                     preferences.getString(KEY_OUTPUT_MODE, TranslationOutputMode.DICTATION.name)!!,
                 )
             }.getOrDefault(TranslationOutputMode.DICTATION),
+            backend = runCatching {
+                TranslationBackend.valueOf(
+                    preferences.getString(KEY_BACKEND, TranslationBackend.HY_MT.name)!!,
+                )
+            }.getOrDefault(TranslationBackend.HY_MT),
             targetLanguage = runCatching {
                 TranslationTargetLanguage.valueOf(
                     preferences.getString(KEY_TARGET_LANGUAGE, TranslationTargetLanguage.ENGLISH.name)!!,
@@ -46,6 +52,10 @@ class VoiceImePreferences(context: Context) {
         preferences.edit().putString(KEY_OUTPUT_MODE, mode.name).apply()
     }
 
+    fun saveTranslationBackend(backend: TranslationBackend) {
+        preferences.edit().putString(KEY_BACKEND, backend.name).apply()
+    }
+
     fun saveTranslationTargetLanguage(targetLanguage: TranslationTargetLanguage) {
         preferences.edit().putString(KEY_TARGET_LANGUAGE, targetLanguage.name).apply()
     }
@@ -53,6 +63,7 @@ class VoiceImePreferences(context: Context) {
     private companion object {
         const val KEY_MODE = "dictation_mode"
         const val KEY_OUTPUT_MODE = "translation_output_mode"
+        const val KEY_BACKEND = "translation_backend"
         const val KEY_TARGET_LANGUAGE = "translation_target_language"
     }
 }

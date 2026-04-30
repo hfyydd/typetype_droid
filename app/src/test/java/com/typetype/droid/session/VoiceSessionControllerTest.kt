@@ -150,7 +150,7 @@ class VoiceSessionControllerTest {
                     targetLanguage = TranslationTargetLanguage.ENGLISH,
                 )
             },
-            translationEngine = translationEngine,
+            translationEngineResolver = { translationEngine },
         )
 
         controller.setMode(DictationMode.OFFLINE)
@@ -177,7 +177,7 @@ class VoiceSessionControllerTest {
                     targetLanguage = TranslationTargetLanguage.ENGLISH,
                 )
             },
-            translationEngine = FakeTranslationEngine("ignored"),
+            translationEngineResolver = { FakeTranslationEngine("ignored") },
         )
 
         controller.handle(SessionEvent.InputStarted(connection))
