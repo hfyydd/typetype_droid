@@ -33,11 +33,13 @@ class MlKitTranslationEngine : TranslationEngine {
 
     private fun translatorFor(targetLanguage: TranslationTargetLanguage): Translator {
         synchronized(lock) {
+            val targetCode = targetLanguage.mlKitCode
+                ?: error("ML Kit does not support ${targetLanguage.label}")
             return translators.getOrPut(targetLanguage) {
                 Translation.getClient(
                     TranslatorOptions.Builder()
                         .setSourceLanguage(TranslateLanguage.CHINESE)
-                        .setTargetLanguage(targetLanguage.mlKitCode)
+                        .setTargetLanguage(targetCode)
                         .build(),
                 )
             }

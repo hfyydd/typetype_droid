@@ -18,7 +18,7 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("onnx")
+        noCompress += listOf("onnx", "gguf")
     }
 
     buildTypes {
@@ -44,5 +44,6 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation("com.google.mlkit:translate:17.0.3")
+    implementation(project(":llama"))
     testImplementation(libs.junit)
 }

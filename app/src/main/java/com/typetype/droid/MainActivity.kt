@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var englishTargetOption: TextView
     private lateinit var japaneseTargetOption: TextView
     private lateinit var germanTargetOption: TextView
+    private lateinit var cantoneseTargetOption: TextView
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,7 +51,13 @@ class MainActivity : Activity() {
         content.addView(sectionTitle(getString(R.string.settings_section)))
         content.addView(modeSelector(), LinearLayout.LayoutParams.MATCH_PARENT, dp(128))
         content.addView(space(1, dp(16)))
-        content.addView(translationSelector(), LinearLayout.LayoutParams.MATCH_PARENT, dp(194))
+        content.addView(
+            translationSelector(),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
         content.addView(space(1, dp(16)))
         content.addView(actionPanel())
 
@@ -272,7 +279,7 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
 
-            updateModeSelection(preferences.loadMode())
+            updateModeSelection(preferences.loadEffectiveMode(), preferences.loadTranslationSettings())
         }
     }
 
@@ -359,15 +366,25 @@ class MainActivity : Activity() {
                     japaneseTargetOption = modeOption(getString(R.string.translation_target_japanese)) {
                         saveTranslationTargetLanguage(TranslationTargetLanguage.JAPANESE)
                     }
+                    addView(englishTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(6) })
+                    addView(japaneseTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(6) })
+                },
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(0, dp(10), 0, 0)
                     germanTargetOption = modeOption(getString(R.string.translation_target_german)) {
                         saveTranslationTargetLanguage(TranslationTargetLanguage.GERMAN)
                     }
-                    addView(englishTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(6) })
-                    addView(japaneseTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-                        leftMargin = dp(3)
-                        rightMargin = dp(3)
-                    })
-                    addView(germanTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(6) })
+                    cantoneseTargetOption = modeOption(getString(R.string.translation_target_cantonese)) {
+                        saveTranslationTargetLanguage(TranslationTargetLanguage.CANTONESE)
+                    }
+                    addView(germanTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { rightMargin = dp(6) })
+                    addView(cantoneseTargetOption, LinearLayout.LayoutParams(0, dp(40), 1f).apply { leftMargin = dp(6) })
                 },
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -528,16 +545,19 @@ class MainActivity : Activity() {
 
     private fun saveMode(mode: DictationMode) {
         preferences.saveMode(mode)
-        updateModeSelection(mode)
-        (application as TypeTypeApplication).warmUpAsr(mode)
+        val effectiveMode = preferences.loadEffectiveMode()
+        updateModeSelection(effectiveMode, preferences.loadTranslationSettings())
+        (application as TypeTypeApplication).warmUpAsr(effectiveMode)
     }
 
     private fun saveTranslationOutputMode(mode: TranslationOutputMode) {
         preferences.saveTranslationOutputMode(mode)
         val settings = preferences.loadTranslationSettings().copy(outputMode = mode)
         updateTranslationSelection(settings)
+        updateModeSelection(preferences.loadEffectiveMode(), settings)
         if (mode == TranslationOutputMode.TRANSLATION) {
             (application as TypeTypeApplication).warmUpTranslation(settings.targetLanguage)
+            (application as TypeTypeApplication).warmUpAsr(DictationMode.OFFLINE)
         }
     }
 
@@ -545,14 +565,17 @@ class MainActivity : Activity() {
         preferences.saveTranslationTargetLanguage(targetLanguage)
         val settings = preferences.loadTranslationSettings().copy(targetLanguage = targetLanguage)
         updateTranslationSelection(settings)
+        updateModeSelection(preferences.loadEffectiveMode(), settings)
         if (settings.outputMode == TranslationOutputMode.TRANSLATION) {
             (application as TypeTypeApplication).warmUpTranslation(targetLanguage)
         }
     }
 
-    private fun updateModeSelection(mode: DictationMode) {
+    private fun updateModeSelection(mode: DictationMode, translationSettings: TranslationSettings) {
         styleModeOption(streamingOption, mode == DictationMode.STREAMING)
         styleModeOption(offlineOption, mode == DictationMode.OFFLINE)
+        val translationEnabled = translationSettings.outputMode == TranslationOutputMode.TRANSLATION
+        setTargetOptionEnabled(streamingOption, !translationEnabled)
     }
 
     private fun updateTranslationSelection(settings: TranslationSettings) {
@@ -561,11 +584,13 @@ class MainActivity : Activity() {
         styleModeOption(englishTargetOption, settings.targetLanguage == TranslationTargetLanguage.ENGLISH)
         styleModeOption(japaneseTargetOption, settings.targetLanguage == TranslationTargetLanguage.JAPANESE)
         styleModeOption(germanTargetOption, settings.targetLanguage == TranslationTargetLanguage.GERMAN)
+        styleModeOption(cantoneseTargetOption, settings.targetLanguage == TranslationTargetLanguage.CANTONESE)
 
         val translationEnabled = settings.outputMode == TranslationOutputMode.TRANSLATION
         setTargetOptionEnabled(englishTargetOption, translationEnabled)
         setTargetOptionEnabled(japaneseTargetOption, translationEnabled)
         setTargetOptionEnabled(germanTargetOption, translationEnabled)
+        setTargetOptionEnabled(cantoneseTargetOption, translationEnabled)
     }
 
     private fun styleModeOption(view: TextView, selected: Boolean) {

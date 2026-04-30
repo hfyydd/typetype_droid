@@ -15,6 +15,14 @@ class VoiceImePreferences(context: Context) {
         }.getOrDefault(DictationMode.STREAMING)
     }
 
+    fun loadEffectiveMode(): DictationMode {
+        return if (loadTranslationSettings().outputMode == TranslationOutputMode.TRANSLATION) {
+            DictationMode.OFFLINE
+        } else {
+            loadMode()
+        }
+    }
+
     fun saveMode(mode: DictationMode) {
         preferences.edit().putString(KEY_MODE, mode.name).apply()
     }

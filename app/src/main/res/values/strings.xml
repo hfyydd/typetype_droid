@@ -18,9 +18,9 @@
     <string name="mode_setting_title">听写模式</string>
     <string name="mode_setting_desc">设置后在语音输入法面板中生效</string>
     <string name="translation_setting_title">输出内容</string>
-    <string name="translation_setting_desc">翻译输出会在本地识别完成后再写入；首次使用目标语言时需要下载本地模型。</string>
+    <string name="translation_setting_desc">翻译输出会在本地识别完成后再写入；默认优先使用内置 HY-MT，本地失败时再回退到轻量翻译后端。</string>
     <string name="translation_target_title">翻译语言</string>
-    <string name="translation_target_desc">翻译流程默认按“中文 -> 目标语言”。移动版首版支持英语、日语、德语。</string>
+    <string name="translation_target_desc">翻译流程默认按“中文 -> 目标语言”。当前支持英语、日语、德语，粤语为实验性目标语言。</string>
     <string name="card_voice_title">麦克风权限</string>
     <string name="card_voice_desc">授予录音权限，输入法才能听写</string>
     <string name="card_ime_title">启用输入法</string>
@@ -34,6 +34,7 @@
     <string name="translation_target_english">英语</string>
     <string name="translation_target_japanese">日语</string>
     <string name="translation_target_german">德语</string>
+    <string name="translation_target_cantonese">粤语</string>
     <string name="status_idle">待机</string>
     <string name="status_preparing">启动中</string>
     <string name="status_listening">正在听</string>

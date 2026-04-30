@@ -12,7 +12,6 @@ import androidx.core.content.ContextCompat
 import com.typetype.droid.audio.AudioCaptureEngine
 import com.typetype.droid.input.AndroidInputConnectionAdapter
 import com.typetype.droid.input.InputCommitController
-import com.typetype.droid.session.DictationMode
 import com.typetype.droid.session.SessionEvent
 import com.typetype.droid.session.VoiceSessionController
 import com.typetype.droid.settings.VoiceImePreferences
@@ -48,7 +47,7 @@ class VoiceImeService : InputMethodService() {
             translationExecutor = translationExecutor,
             stateExecutor = { action -> mainHandler.post(action) },
         )
-        val mode = preferences.loadMode()
+        val mode = preferences.loadEffectiveMode()
         sessionController.setMode(mode)
         app.warmUpAsr(mode)
         warmUpTranslationIfNeeded()
@@ -57,7 +56,6 @@ class VoiceImeService : InputMethodService() {
     override fun onDestroy() {
         sessionExecutor.shutdownNow()
         translationExecutor.shutdownNow()
-        (application as TypeTypeApplication).close()
         super.onDestroy()
     }
 
@@ -79,7 +77,7 @@ class VoiceImeService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        sessionController.setMode(preferences.loadMode())
+        sessionController.setMode(preferences.loadEffectiveMode())
         warmUpTranslationIfNeeded()
         sessionController.handle(SessionEvent.PrepareRequested)
         inputViewOrNull()?.render(sessionController.state)
@@ -115,13 +113,6 @@ class VoiceImeService : InputMethodService() {
     private fun toggleListening() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             sessionController.handle(SessionEvent.Error("Microphone permission is missing"))
-            return
-        }
-        if (
-            preferences.loadTranslationSettings().outputMode == TranslationOutputMode.TRANSLATION &&
-            preferences.loadMode() != DictationMode.OFFLINE
-        ) {
-            sessionController.handle(SessionEvent.Error(getString(R.string.translation_requires_offline)))
             return
         }
 
