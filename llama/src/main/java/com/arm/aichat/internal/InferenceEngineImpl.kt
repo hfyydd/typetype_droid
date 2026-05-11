@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.arm.aichat.InferenceEngine
 import com.arm.aichat.ModelLoadException
-import com.arm.aichat.UnsupportedArchitectureException
 import com.arm.aichat.internal.InferenceEngineImpl.Companion.getInstance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -44,7 +43,7 @@ import java.io.IOException
  * @see ai_chat.cpp for the native implementation details
  */
 internal class InferenceEngineImpl private constructor(
-    private val nativeLibDir: String
+    private val context: Context,
 ) : InferenceEngine {
 
     companion object {
@@ -62,14 +61,11 @@ internal class InferenceEngineImpl private constructor(
          */
         internal fun getInstance(context: Context) =
             instance ?: synchronized(this) {
-                val nativeLibDir = context.applicationInfo.nativeLibraryDir
-                require(nativeLibDir.isNotBlank()) { "Expected a valid native library path!" }
-
                 try {
                     Log.i(TAG, "Instantiating InferenceEngineImpl,,,")
-                    InferenceEngineImpl(nativeLibDir).also { instance = it }
+                    InferenceEngineImpl(context.applicationContext).also { instance = it }
                 } catch (e: UnsatisfiedLinkError) {
-                    Log.e(TAG, "Failed to load native library from $nativeLibDir", e)
+                    Log.e(TAG, "Failed to load native library", e)
                     throw e
                 }
             }
@@ -123,7 +119,7 @@ internal class InferenceEngineImpl private constructor(
                 _state.value = InferenceEngine.State.Initializing
                 Log.i(TAG, "Loading native library...")
                 System.loadLibrary("ai-chat")
-                init(nativeLibDir)
+                init(context.applicationInfo.nativeLibraryDir)
                 _state.value = InferenceEngine.State.Initialized
                 Log.i(TAG, "Native library loaded! System info: \n${systemInfo()}")
 

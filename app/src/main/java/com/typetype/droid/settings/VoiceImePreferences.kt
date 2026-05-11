@@ -37,9 +37,9 @@ class VoiceImePreferences(context: Context) {
             }.getOrDefault(TranslationOutputMode.DICTATION),
             backend = runCatching {
                 TranslationBackend.valueOf(
-                    preferences.getString(KEY_BACKEND, TranslationBackend.HY_MT.name)!!,
+                    preferences.getString(KEY_BACKEND, TranslationBackend.ML_KIT.name)!!,
                 )
-            }.getOrDefault(TranslationBackend.HY_MT),
+            }.getOrDefault(TranslationBackend.ML_KIT),
             targetLanguage = runCatching {
                 TranslationTargetLanguage.valueOf(
                     preferences.getString(KEY_TARGET_LANGUAGE, TranslationTargetLanguage.ENGLISH.name)!!,

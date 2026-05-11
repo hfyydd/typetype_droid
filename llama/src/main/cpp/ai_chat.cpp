@@ -45,11 +45,9 @@ Java_com_arm_aichat_internal_InferenceEngineImpl_init(JNIEnv *env, jobject /*unu
     // Set llama log handler to Android
     llama_log_set(aichat_android_log_callback, nullptr);
 
-    // Loading all CPU backend variants
-    const auto *path_to_backend = env->GetStringUTFChars(nativeLibDir, 0);
-    LOGi("Loading backends from %s", path_to_backend);
-    ggml_backend_load_all_from_path(path_to_backend);
-    env->ReleaseStringUTFChars(nativeLibDir, path_to_backend);
+    const auto *lib_dir = env->GetStringUTFChars(nativeLibDir, 0);
+    LOGi("Initializing ai-chat with nativeLibraryDir=%s", lib_dir);
+    env->ReleaseStringUTFChars(nativeLibDir, lib_dir);
 
     // Log loaded backends
     const size_t n_backends = ggml_backend_reg_count();
