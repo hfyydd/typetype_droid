@@ -10,6 +10,9 @@ import com.typetype.droid.audio.AudioCaptureEngine
 import com.typetype.droid.input.EditableInputConnection
 import com.typetype.droid.input.InputCommitController
 import com.typetype.droid.input.CircularAudioBuffer
+import com.typetype.droid.rewrite.RuleBasedTextRewriteEngine
+import com.typetype.droid.rewrite.StructuredTextFormatter
+import com.typetype.droid.rewrite.TextRewriteEngine
 import com.typetype.droid.translation.TranslationEngine
 import com.typetype.droid.translation.TranslationEngineResolver
 import com.typetype.droid.translation.TranslationOutputMode
@@ -23,6 +26,7 @@ class VoiceSessionController(
     private val commitController: InputCommitController,
     private val translationSettingsProvider: () -> TranslationSettings = { TranslationSettings() },
     private val translationEngineResolver: TranslationEngineResolver? = null,
+    private val textRewriteEngine: TextRewriteEngine = RuleBasedTextRewriteEngine(),
     private val onStateChanged: (VoiceSessionState) -> Unit = {},
     private val backgroundExecutor: Executor = Executor { it.run() },
     private val translationExecutor: Executor = backgroundExecutor,
@@ -36,6 +40,10 @@ class VoiceSessionController(
     private var preparedMode: DictationMode? = null
     private var preparingMode: DictationMode? = null
     private var asrEventGeneration = 0
+    private var streamingCommittedText = ""
+    private var streamingActiveText = ""
+    private var streamingSegmentPrefix = ""
+    private var stopCompletionPending = false
 
     fun setMode(mode: DictationMode) {
         if (state.isActive || state.phase == VoiceSessionState.Phase.PREPARING) return
@@ -48,17 +56,17 @@ class VoiceSessionController(
                 connection = event.connection
                 commitController.attach(event.connection)
                 if (event.connection == null) {
-                    stopSession()
+                    stopSession(finalizeRecognition = false)
                 }
             }
 
-            SessionEvent.InputFinished -> stopSession()
+            SessionEvent.InputFinished -> stopSession(finalizeRecognition = false)
             SessionEvent.PrepareRequested -> prepareSession()
             SessionEvent.StartRequested -> startSession()
-            SessionEvent.StopRequested -> stopSession()
+            SessionEvent.StopRequested -> stopSession(finalizeRecognition = true)
             is SessionEvent.EditorSelectionChanged -> handleEditorSelectionChanged(event)
             is SessionEvent.StreamingText -> writeStreamingText(event.text)
-            SessionEvent.StreamingSegmentFinished -> commitController.resetSession()
+            SessionEvent.StreamingSegmentFinished -> finishStreamingSegment()
             is SessionEvent.OfflineText -> writeOfflineText(event.text)
             is SessionEvent.Error -> fail(event.message)
         }
@@ -69,7 +77,9 @@ class VoiceSessionController(
             resetCurrentDictationSegment()
             return
         }
-        commitController.writeStreaming(text)
+        val outputText = StructuredTextFormatter.punctuateStreamingQuestions(streamingOutputText(text))
+        streamingActiveText = outputText
+        commitController.writeStreaming(outputText)
     }
 
     private fun writeOfflineText(text: String) {
@@ -87,7 +97,29 @@ class VoiceSessionController(
             translateOfflineText(text, translationSettings)
             return
         }
-        commitController.commitFinal(text)
+        commitController.commitFinal(textRewriteEngine.rewrite(text))
+    }
+
+    private fun streamingOutputText(text: String): String {
+        if (streamingActiveText.isEmpty()) {
+            val prefixed = StructuredTextFormatter.prefixStreamingBoundaryPunctuation(streamingCommittedText, text)
+            streamingSegmentPrefix = if (text.isNotEmpty() && prefixed.endsWith(text)) {
+                prefixed.dropLast(text.length)
+            } else {
+                ""
+            }
+            return prefixed
+        }
+        return streamingSegmentPrefix + text
+    }
+
+    private fun finishStreamingSegment() {
+        if (streamingActiveText.isNotBlank()) {
+            streamingCommittedText += streamingActiveText
+        }
+        streamingActiveText = ""
+        streamingSegmentPrefix = ""
+        commitController.finishStreamingSegment()
     }
 
     private fun translateOfflineText(
@@ -97,12 +129,15 @@ class VoiceSessionController(
         val targetLanguage = translationSettings.targetLanguage
         val translationEngine = translationEngineResolver?.resolve(translationSettings.backend)
         val currentGeneration = asrEventGeneration
+        logInfo("translateOfflineText backend=${translationSettings.backend} target=$targetLanguage chars=${text.length}")
         update(state.copy(phase = VoiceSessionState.Phase.TRANSLATING, error = null))
         translationExecutor.execute translateWork@{
+            val startMs = elapsedRealtimeOrZero()
             val translated = try {
                 translationEngine?.translate(text, targetLanguage)
                     ?: error("Translation engine is unavailable")
             } catch (error: Throwable) {
+                logError("translateOfflineText failed", error)
                 stateExecutor.execute {
                     if (currentGeneration == asrEventGeneration) {
                         fail(error.message ?: "翻译失败")
@@ -120,8 +155,11 @@ class VoiceSessionController(
                     resetCurrentDictationSegment()
                     return@applyTranslation
                 }
+                logInfo("translateOfflineText done elapsed=${elapsedRealtimeOrZero() - startMs}ms chars=${translated.length}")
                 commitController.commitFinal(translated)
-                if (state.phase == VoiceSessionState.Phase.TRANSLATING) {
+                if (stopCompletionPending) {
+                    completeFinalizedStop()
+                } else if (state.phase == VoiceSessionState.Phase.TRANSLATING) {
                     update(state.copy(phase = VoiceSessionState.Phase.LISTENING, error = null))
                 }
             }
@@ -135,6 +173,7 @@ class VoiceSessionController(
     private fun resetCurrentDictationSegment() {
         asrEventGeneration += 1
         commitController.resetAfterExternalCommit()
+        clearStreamingTranscript()
         engine?.reset()
     }
 
@@ -260,7 +299,7 @@ class VoiceSessionController(
         }
     }
 
-    private fun stopSession() {
+    private fun stopSession(finalizeRecognition: Boolean) {
         if (!state.isActive && state.phase != VoiceSessionState.Phase.ERROR) {
             val engineToClose = engine
             engine = null
@@ -268,6 +307,8 @@ class VoiceSessionController(
             asrEventGeneration += 1
             commitController.detach()
             connection = null
+            clearStreamingTranscript()
+            stopCompletionPending = false
             if (state.phase != VoiceSessionState.Phase.IDLE) {
                 update(state.copy(phase = VoiceSessionState.Phase.IDLE, error = null))
             }
@@ -276,24 +317,81 @@ class VoiceSessionController(
             }
             return
         }
-        update(state.copy(phase = VoiceSessionState.Phase.STOPPING))
+        if (state.phase == VoiceSessionState.Phase.STOPPING) return
+        val stopPhase = if (finalizeRecognition && state.mode == DictationMode.OFFLINE) {
+            VoiceSessionState.Phase.DECODING
+        } else {
+            VoiceSessionState.Phase.STOPPING
+        }
+        update(state.copy(phase = stopPhase, error = null))
         val engineToClose = engine
         engine = null
         preparedMode = null
         preparingMode = null
+        stopCompletionPending = finalizeRecognition
+        if (!finalizeRecognition) {
+            asrEventGeneration += 1
+            commitController.resetSession()
+            commitController.detach()
+            connection = null
+            clearStreamingTranscript()
+        }
+        backgroundExecutor.execute {
+            audioCaptureEngine.stop()
+            val finishError = if (finalizeRecognition) {
+                runCatching { engineToClose?.finish() }.exceptionOrNull()
+            } else {
+                null
+            }
+            engineToClose?.close()
+            stateExecutor.execute stopApply@{
+                if (finishError != null) {
+                    fail(finishError.message ?: "Unable to finalize ASR result")
+                    return@stopApply
+                }
+                if (!finalizeRecognition) {
+                    if (state.phase == VoiceSessionState.Phase.STOPPING) {
+                        update(state.copy(phase = VoiceSessionState.Phase.IDLE, error = null))
+                    }
+                    return@stopApply
+                }
+                if (stopCompletionPending && state.phase != VoiceSessionState.Phase.TRANSLATING) {
+                    completeFinalizedStop()
+                }
+            }
+        }
+    }
+
+    private fun completeFinalizedStop() {
+        if (state.mode == DictationMode.STREAMING) {
+            finalizeStreamingOutput()
+        }
+        stopCompletionPending = false
         asrEventGeneration += 1
         commitController.resetSession()
         commitController.detach()
         connection = null
-        backgroundExecutor.execute {
-            audioCaptureEngine.stop()
-            engineToClose?.close()
-            stateExecutor.execute {
-                if (state.phase == VoiceSessionState.Phase.STOPPING) {
-                    update(state.copy(phase = VoiceSessionState.Phase.IDLE, error = null))
-                }
-            }
+        clearStreamingTranscript()
+        update(state.copy(phase = VoiceSessionState.Phase.IDLE, error = null))
+    }
+
+    private fun finalizeStreamingOutput() {
+        val transcript = currentStreamingTranscript()
+        if (transcript.isBlank()) return
+        val rewritten = textRewriteEngine.rewrite(transcript)
+        if (rewritten.isNotBlank()) {
+            commitController.replaceStreamingText(rewritten)
         }
+    }
+
+    private fun currentStreamingTranscript(): String {
+        return streamingCommittedText + streamingActiveText
+    }
+
+    private fun clearStreamingTranscript() {
+        streamingCommittedText = ""
+        streamingActiveText = ""
+        streamingSegmentPrefix = ""
     }
 
     private fun fail(message: String) {
@@ -301,8 +399,10 @@ class VoiceSessionController(
         engine = null
         preparedMode = null
         preparingMode = null
+        stopCompletionPending = false
         asrEventGeneration += 1
         commitController.resetSession()
+        clearStreamingTranscript()
         backgroundExecutor.execute {
             audioCaptureEngine.stop()
             engineToClose?.close()
@@ -313,6 +413,18 @@ class VoiceSessionController(
     private fun update(next: VoiceSessionState) {
         state = next
         onStateChanged(next)
+    }
+
+    private fun logInfo(message: String) {
+        runCatching { Log.i(TAG, message) }
+    }
+
+    private fun logError(message: String, error: Throwable) {
+        runCatching { Log.e(TAG, message, error) }
+    }
+
+    private fun elapsedRealtimeOrZero(): Long {
+        return runCatching { SystemClock.elapsedRealtime() }.getOrDefault(0L)
     }
 
     private fun drainPendingSamples(

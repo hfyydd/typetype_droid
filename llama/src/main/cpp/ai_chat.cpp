@@ -28,9 +28,9 @@ constexpr int   N_THREADS_MIN           = 2;
 constexpr int   N_THREADS_MAX           = 4;
 constexpr int   N_THREADS_HEADROOM      = 2;
 
-constexpr int   DEFAULT_CONTEXT_SIZE    = 8192;
+constexpr int   DEFAULT_CONTEXT_SIZE    = 2048;
 constexpr int   OVERFLOW_HEADROOM       = 4;
-constexpr int   BATCH_SIZE              = 512;
+constexpr int   BATCH_SIZE              = 128;
 constexpr float DEFAULT_SAMPLER_TEMP    = 0.3f;
 
 static llama_model                      * g_model;
@@ -67,8 +67,9 @@ JNIEXPORT jint JNICALL
 Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstring jmodel_path) {
     llama_model_params model_params = llama_model_default_params();
 
-    // Disable mmap on Android to avoid potential file system issues
-    model_params.use_mmap = false;
+    // Keep the GGUF memory-mapped on Android. Loading the full HY-MT model into
+    // heap/RSS on settings warm-up can get the process killed on real phones.
+    model_params.use_mmap = true;
 
     const auto *model_path = env->GetStringUTFChars(jmodel_path, 0);
     LOGi("%s: Loading model from: \n%s\n", __func__, model_path);
@@ -77,11 +78,7 @@ Java_com_arm_aichat_internal_InferenceEngineImpl_load(JNIEnv *env, jobject, jstr
     auto *model = llama_model_load_from_file(model_path, model_params);
     env->ReleaseStringUTFChars(jmodel_path, model_path);
     if (!model) {
-        // Log detailed error info from llama
         LOGe("%s: llama_model_load_from_file returned NULL", __func__);
-        char model_desc[128];
-        llama_model_desc(nullptr, model_desc, sizeof(model_desc));
-        LOGe("%s: Model description: %s", __func__, model_desc);
         return 1;
     }
     g_model = model;
