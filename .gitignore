@@ -10,3 +10,5 @@ app/src/main/assets/translation-models/
 local.properties
 *.iml
 .DS_Store
+*.apk
+*.zip

@@ -6,16 +6,19 @@ class InputCommitController(
     private var connection: EditableInputConnection? = null
     private var streamingSuspendedUntilReset = false
     private var hasWrittenOutput = false
+    private var committedStreamingText = ""
 
     fun attach(connection: EditableInputConnection?) {
         this.connection = connection
         hasWrittenOutput = false
+        committedStreamingText = ""
         resetSession()
     }
 
     fun detach() {
         connection = null
         hasWrittenOutput = false
+        committedStreamingText = ""
         resetSession()
     }
 
@@ -73,6 +76,8 @@ class InputCommitController(
 
     fun hasWrittenOutput(): Boolean = hasWrittenOutput
 
+    fun currentStreamingText(): String = committedStreamingText + diffWriter.currentText()
+
     fun cursorIsAtStart(): Boolean {
         val target = connection ?: return false
         return target.getTextBeforeCursor(1)?.isEmpty() != false
@@ -82,11 +87,48 @@ class InputCommitController(
         val target = connection ?: return false
         if (text.isBlank()) return true
         resetSession()
+        committedStreamingText = ""
         val committed = target.commitText(text)
         if (committed) {
             hasWrittenOutput = true
         }
         return committed
+    }
+
+    fun finishStreamingSegment() {
+        committedStreamingText += diffWriter.currentText()
+        resetSession()
+    }
+
+    fun replaceStreamingText(text: String): Boolean {
+        val target = connection ?: return false
+        val previous = currentStreamingText()
+        if (previous.isBlank()) {
+            return commitFinal(text)
+        }
+        val cachedBeforeCursor = target.getTextBeforeCursor(previous.length)?.toString()
+        if (cachedBeforeCursor != previous) {
+            streamingSuspendedUntilReset = true
+            diffWriter.reset()
+            committedStreamingText = ""
+            return false
+        }
+
+        if (!target.beginBatchEdit()) {
+            return false
+        }
+        return try {
+            val deleted = target.deleteBeforeCursor(previous.length)
+            val committed = deleted && (text.isBlank() || target.commitText(text))
+            if (committed) {
+                hasWrittenOutput = text.isNotBlank()
+                committedStreamingText = ""
+                diffWriter.reset()
+            }
+            committed
+        } finally {
+            target.endBatchEdit()
+        }
     }
 
     fun resetSession() {
@@ -97,5 +139,6 @@ class InputCommitController(
     fun resetAfterExternalCommit() {
         resetSession()
         hasWrittenOutput = false
+        committedStreamingText = ""
     }
 }

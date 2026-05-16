@@ -165,6 +165,70 @@ class VoiceSessionControllerTest {
     }
 
     @Test
+    fun stopInStreamingModeStructuresAlreadyWrittenText() {
+        val connection = FakeEditableInputConnection()
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.StreamingText("今天有两件事第一修复流式第二测试粤语"))
+        controller.handle(SessionEvent.StopRequested)
+
+        assertEquals("今天有两件事：\n1. 修复流式。\n2. 测试粤语。", connection.text)
+        assertEquals(VoiceSessionState.Phase.IDLE, controller.state.phase)
+    }
+
+    @Test
+    fun streamingModeAddsQuestionMarkBeforeFollowingStatement() {
+        val connection = FakeEditableInputConnection()
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.StreamingText("你今天有没有空，明天继续测试"))
+
+        assertEquals("你今天有没有空？明天继续测试", connection.text)
+
+        controller.handle(SessionEvent.StopRequested)
+
+        assertEquals("你今天有没有空？明天继续测试。", connection.text)
+        assertEquals(VoiceSessionState.Phase.IDLE, controller.state.phase)
+    }
+
+    @Test
+    fun offlineModeCommitsStructuredWholeUtterance() {
+        val connection = FakeEditableInputConnection()
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+
+        controller.setMode(DictationMode.OFFLINE)
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.OfflineText("今天有两件事第一修复流式第二测试粤语"))
+        controller.handle(SessionEvent.StopRequested)
+
+        assertEquals("今天有两件事：\n1. 修复流式。\n2. 测试粤语。", connection.text)
+        assertEquals(VoiceSessionState.Phase.IDLE, controller.state.phase)
+    }
+
+    @Test
     fun translationOutputFailsInStreamingMode() {
         val connection = FakeEditableInputConnection()
         val controller = VoiceSessionController(
@@ -190,19 +254,29 @@ class VoiceSessionControllerTest {
     }
 }
 
-private class FakeAsrEngineFactory : AsrEngineFactory {
-    val engine = FakeAsrEngine()
+private class FakeAsrEngineFactory(
+    private val finalEvents: List<AsrEvent> = emptyList(),
+) : AsrEngineFactory {
+    val engine = FakeAsrEngine(finalEvents)
 
     override fun create(mode: DictationMode, onEvent: (AsrEvent) -> Unit): AsrEngine {
+        engine.onEvent = onEvent
         return engine
     }
 }
 
-private class FakeAsrEngine : AsrEngine {
+private class FakeAsrEngine(
+    private val finalEvents: List<AsrEvent>,
+) : AsrEngine {
     var resetCount = 0
         private set
+    var onEvent: ((AsrEvent) -> Unit)? = null
 
     override fun acceptSamples(samples: FloatArray) = Unit
+
+    override fun finish() {
+        finalEvents.forEach { onEvent?.invoke(it) }
+    }
 
     override fun reset() {
         resetCount += 1

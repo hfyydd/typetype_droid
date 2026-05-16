@@ -13,6 +13,8 @@ class StreamingDiffWriter(
 
     fun hasActiveText(): Boolean = previousText.isNotEmpty()
 
+    fun currentText(): String = previousText
+
     fun fieldStillHasActiveText(connection: EditableInputConnection): Boolean {
         if (previousText.isEmpty()) return true
         val beforeCursor = connection.getTextBeforeCursor(previousText.length)?.toString() ?: return false

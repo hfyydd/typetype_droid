@@ -9,7 +9,7 @@ class CircularAudioBuffer(capacity: Int) {
 
     fun add(samples: FloatArray) {
         val pos = (head.get() + count.get()) % buffer.size
-        buffer[pos] = samples
+        buffer[pos] = samples.copyOf()
         if (count.get() < buffer.size) {
             count.incrementAndGet()
         } else {

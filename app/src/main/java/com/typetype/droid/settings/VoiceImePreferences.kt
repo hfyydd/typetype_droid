@@ -29,7 +29,8 @@ class VoiceImePreferences(context: Context) {
     }
 
     fun loadTranslationSettings(): TranslationSettings {
-        return TranslationSettings(
+        return normalizeTranslationSettings(
+            TranslationSettings(
             outputMode = runCatching {
                 TranslationOutputMode.valueOf(
                     preferences.getString(KEY_OUTPUT_MODE, TranslationOutputMode.DICTATION.name)!!,
@@ -45,6 +46,7 @@ class VoiceImePreferences(context: Context) {
                     preferences.getString(KEY_TARGET_LANGUAGE, TranslationTargetLanguage.ENGLISH.name)!!,
                 )
             }.getOrDefault(TranslationTargetLanguage.ENGLISH),
+            ),
         )
     }
 
@@ -57,7 +59,19 @@ class VoiceImePreferences(context: Context) {
     }
 
     fun saveTranslationTargetLanguage(targetLanguage: TranslationTargetLanguage) {
-        preferences.edit().putString(KEY_TARGET_LANGUAGE, targetLanguage.name).apply()
+        val editor = preferences.edit().putString(KEY_TARGET_LANGUAGE, targetLanguage.name)
+        if (targetLanguage == TranslationTargetLanguage.CANTONESE) {
+            editor.putString(KEY_BACKEND, TranslationBackend.HY_MT.name)
+        }
+        editor.apply()
+    }
+
+    private fun normalizeTranslationSettings(settings: TranslationSettings): TranslationSettings {
+        return if (settings.targetLanguage == TranslationTargetLanguage.CANTONESE) {
+            settings.copy(backend = TranslationBackend.HY_MT)
+        } else {
+            settings
+        }
     }
 
     private companion object {

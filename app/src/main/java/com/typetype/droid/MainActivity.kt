@@ -707,7 +707,7 @@ class MainActivity : Activity() {
         styleModeOption(cantoneseTargetOption, settings.targetLanguage == TranslationTargetLanguage.CANTONESE)
 
         val translationEnabled = settings.outputMode == TranslationOutputMode.TRANSLATION
-        setTargetOptionEnabled(hyMtBackendOption, false)
+        setTargetOptionEnabled(hyMtBackendOption, translationEnabled)
         setTargetOptionEnabled(mlKitBackendOption, translationEnabled)
         setTargetOptionEnabled(englishTargetOption, translationEnabled)
         setTargetOptionEnabled(japaneseTargetOption, translationEnabled)

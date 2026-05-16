@@ -1,6 +1,8 @@
 package com.typetype.droid.translation
 
 import android.content.Context
+import android.os.SystemClock
+import android.util.Log
 import com.arm.aichat.AiChat
 import com.arm.aichat.InferenceEngine
 import com.arm.aichat.ModelLoadException
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -20,8 +23,13 @@ class HyMtTranslationEngine(
     context: Context,
 ) : TranslationEngine {
     private val appContext = context.applicationContext
-    private val engine: InferenceEngine = AiChat.getInferenceEngine(appContext)
-    private val ggufReader = GgufMetadataReader.create()
+    private val engineDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AiChat.getInferenceEngine(appContext)
+    }
+    private val engine: InferenceEngine by engineDelegate
+    private val ggufReader by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        GgufMetadataReader.create()
+    }
     private val lock = Any()
     private var loadedModelPath: String? = null
     private val modelCopied = AtomicBoolean(false)
@@ -39,25 +47,37 @@ class HyMtTranslationEngine(
         if (normalized.isEmpty()) return ""
 
         try {
+            val startMs = elapsedRealtimeOrZero()
+            logInfo("HY-MT translation start target=${targetLanguage.name} chars=${normalized.length}")
             ensureModelLoaded()
-            return runBlocking {
+            val translated = runBlocking {
                 val output = StringBuilder()
-                engine.sendUserPrompt(buildUserPrompt(normalized, targetLanguage), predictLength = PREDICT_LENGTH)
-                    .collect { token ->
-                        output.append(token)
-                    }
+                withTimeout(GENERATION_TIMEOUT_MS) {
+                    engine.sendUserPrompt(buildUserPrompt(normalized, targetLanguage), predictLength = PREDICT_LENGTH)
+                        .collect { token ->
+                            output.append(token)
+                        }
+                }
                 output.toString().trim().ifEmpty {
                     throw IOException("HY-MT generated empty output")
                 }
             }
+            val normalizedTranslation = CantoneseTranslationPostProcessor.normalize(translated, targetLanguage)
+            logInfo(
+                "HY-MT translation done elapsed=${elapsedRealtimeOrZero() - startMs}ms chars=${normalizedTranslation.length}",
+            )
+            return normalizedTranslation
         } catch (error: Throwable) {
+            logError("HY-MT translation failed", error)
             throw wrapHyMtError("translation", error)
         }
     }
 
     override fun close() {
         synchronized(lock) {
-            runCatching { engine.destroy() }
+            if (engineDelegate.isInitialized()) {
+                runCatching { engine.destroy() }
+            }
             loadedModelPath = null
             modelCopied.set(false)
         }
@@ -67,22 +87,31 @@ class HyMtTranslationEngine(
         synchronized(lock) {
             if (loadedModelPath != null) return
 
+            val startMs = elapsedRealtimeOrZero()
+            logInfo("HY-MT ensureModelLoaded start")
             val modelFile = ensureBundledModelCopied()
+            logInfo("HY-MT model file ready elapsed=${elapsedRealtimeOrZero() - startMs}ms size=${modelFile.length()}")
             validateModelFile(modelFile)
+            logInfo("HY-MT model file validated elapsed=${elapsedRealtimeOrZero() - startMs}ms")
             runBlocking {
-                awaitEngineInitialized()
-                if (loadedModelPath != modelFile.absolutePath) {
-                    runCatching { engine.cleanUp() }
-                    engine.loadModel(modelFile.absolutePath)
-                    loadedModelPath = modelFile.absolutePath
+                withTimeout(MODEL_LOAD_TIMEOUT_MS) {
+                    resetErroredEngineIfNeeded()
+                    awaitEngineInitialized()
+                    if (loadedModelPath != modelFile.absolutePath) {
+                        runCatching { engine.cleanUp() }
+                        engine.loadModel(modelFile.absolutePath)
+                        loadedModelPath = modelFile.absolutePath
+                    }
                 }
             }
+            logInfo("HY-MT model loaded elapsed=${elapsedRealtimeOrZero() - startMs}ms")
         }
     }
 
     private fun ensureBundledModelCopied(): File {
         val targetDir = File(appContext.filesDir, MODEL_DIR_NAME).apply { mkdirs() }
         val targetFile = File(targetDir, MODEL_FILE_NAME)
+        deleteLegacyModelFiles(targetDir)
         if (modelCopied.get() && isUsableModelFile(targetFile)) {
             return targetFile
         }
@@ -116,6 +145,16 @@ class HyMtTranslationEngine(
         }
     }
 
+    private fun deleteLegacyModelFiles(targetDir: File) {
+        LEGACY_MODEL_FILE_NAMES.forEach { fileName ->
+            runCatching {
+                File(targetDir, fileName)
+                    .takeIf { it.exists() && it.name != MODEL_FILE_NAME }
+                    ?.delete()
+            }
+        }
+    }
+
     private suspend fun awaitEngineInitialized() {
         val state = engine.state
             .filter {
@@ -127,6 +166,12 @@ class HyMtTranslationEngine(
 
         if (state is InferenceEngine.State.Error) {
             throw state.exception
+        }
+    }
+
+    private fun resetErroredEngineIfNeeded() {
+        if (engine.state.value is InferenceEngine.State.Error) {
+            runCatching { engine.cleanUp() }
         }
     }
 
@@ -173,11 +218,27 @@ class HyMtTranslationEngine(
         return RuntimeException("HY-MT $phase failed: $detail", error)
     }
 
+    private fun logInfo(message: String) {
+        runCatching { Log.i(TAG, message) }
+    }
+
+    private fun logError(message: String, error: Throwable) {
+        runCatching { Log.e(TAG, message, error) }
+    }
+
+    private fun elapsedRealtimeOrZero(): Long {
+        return runCatching { SystemClock.elapsedRealtime() }.getOrDefault(0L)
+    }
+
     private companion object {
+        const val TAG = "HyMtTranslationEngine"
         const val MODEL_DIR_NAME = "translation-models"
-        const val MODEL_FILE_NAME = "Hy-MT1.5-1.8B-2bit.gguf"
-        const val MODEL_ASSET_PATH = "translation-models/Hy-MT1.5-1.8B-2bit.gguf"
-        const val MODEL_EXPECTED_SIZE_BYTES = 600_534_880L
-        const val PREDICT_LENGTH = 512
+        const val MODEL_FILE_NAME = "HY-MT1.5-1.8B-Q4_K_M.gguf"
+        const val MODEL_ASSET_PATH = "translation-models/HY-MT1.5-1.8B-Q4_K_M.gguf"
+        const val MODEL_EXPECTED_SIZE_BYTES = 1_133_080_512L
+        const val PREDICT_LENGTH = 160
+        const val MODEL_LOAD_TIMEOUT_MS = 180_000L
+        const val GENERATION_TIMEOUT_MS = 120_000L
+        val LEGACY_MODEL_FILE_NAMES = setOf("Hy-MT1.5-1.8B-2bit.gguf")
     }
 }

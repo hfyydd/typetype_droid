@@ -123,9 +123,11 @@ internal class InferenceEngineImpl private constructor(
                 _state.value = InferenceEngine.State.Initialized
                 Log.i(TAG, "Native library loaded! System info: \n${systemInfo()}")
 
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to load native library", e)
-                throw e
+            } catch (error: Throwable) {
+                val exception = error.asException()
+                _state.value = InferenceEngine.State.Error(exception)
+                Log.e(TAG, "Failed to load native library", error)
+                throw error
             }
         }
     }
@@ -161,10 +163,11 @@ internal class InferenceEngineImpl private constructor(
 
                 _cancelGeneration = false
                 _state.value = InferenceEngine.State.ModelReady
-            } catch (e: Exception) {
-                Log.e(TAG, (e.message ?: "Error loading model") + "\n" + pathToModel, e)
-                _state.value = InferenceEngine.State.Error(e)
-                throw e
+            } catch (error: Throwable) {
+                val exception = error.asException()
+                Log.e(TAG, (error.message ?: "Error loading model") + "\n" + pathToModel, error)
+                _state.value = InferenceEngine.State.Error(exception)
+                throw error
             }
         }
 
@@ -237,10 +240,11 @@ internal class InferenceEngineImpl private constructor(
             Log.i(TAG, "Assistant generation's flow collection cancelled.")
             _state.value = InferenceEngine.State.ModelReady
             throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during generation!", e)
-            _state.value = InferenceEngine.State.Error(e)
-            throw e
+        } catch (error: Throwable) {
+            val exception = error.asException()
+            Log.e(TAG, "Error during generation!", error)
+            _state.value = InferenceEngine.State.Error(exception)
+            throw error
         }
     }.flowOn(llamaDispatcher)
 
@@ -305,5 +309,9 @@ internal class InferenceEngineImpl private constructor(
             }
         }
         llamaScope.cancel()
+    }
+
+    private fun Throwable.asException(): Exception {
+        return if (this is Exception) this else RuntimeException(this)
     }
 }

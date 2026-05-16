@@ -99,4 +99,18 @@ class StreamingDiffWriterTest {
         assertTrue(controller.writeStreaming("下一句"))
         assertEquals("下一句", connection.text)
     }
+
+    @Test
+    fun replaceStreamingTextRewritesOwnedSessionText() {
+        val connection = FakeEditableInputConnection()
+        val controller = InputCommitController()
+        controller.attach(connection)
+
+        assertTrue(controller.writeStreaming("今天有两件事"))
+        controller.finishStreamingSegment()
+        assertTrue(controller.writeStreaming("第一测试流式第二测试粤语"))
+
+        assertTrue(controller.replaceStreamingText("今天有两件事：\n1. 测试流式。\n2. 测试粤语。"))
+        assertEquals("今天有两件事：\n1. 测试流式。\n2. 测试粤语。", connection.text)
+    }
 }

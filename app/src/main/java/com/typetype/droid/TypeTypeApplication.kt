@@ -5,6 +5,7 @@ import com.typetype.droid.asr.SherpaAsrEngineFactory
 import com.typetype.droid.session.DictationMode
 import com.typetype.droid.settings.VoiceImePreferences
 import com.typetype.droid.translation.TranslationBackend
+import com.typetype.droid.translation.FallbackTranslationEngine
 import com.typetype.droid.translation.HyMtTranslationEngine
 import com.typetype.droid.translation.TranslationEngine
 import com.typetype.droid.translation.MlKitTranslationEngine
@@ -53,6 +54,9 @@ class TypeTypeApplication : Application() {
         backend: TranslationBackend,
         targetLanguage: TranslationTargetLanguage,
     ) {
+        if (backend == TranslationBackend.HY_MT) {
+            return
+        }
         preloadExecutor.execute {
             runCatching {
                 translationEngineFor(backend).warmUp(targetLanguage)
@@ -62,7 +66,7 @@ class TypeTypeApplication : Application() {
 
     fun translationEngineFor(backend: TranslationBackend): TranslationEngine {
         return when (backend) {
-            TranslationBackend.HY_MT -> hyMtTranslationEngine
+            TranslationBackend.HY_MT -> FallbackTranslationEngine(hyMtTranslationEngine, mlKitTranslationEngine)
             TranslationBackend.ML_KIT -> mlKitTranslationEngine
         }
     }
