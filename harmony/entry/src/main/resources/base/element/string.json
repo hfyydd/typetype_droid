@@ -1,0 +1,28 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "TypeType"
+    },
+    {
+      "name": "ime_name",
+      "value": "TypeType Voice"
+    },
+    {
+      "name": "module_desc",
+      "value": "TypeType HarmonyOS input method"
+    },
+    {
+      "name": "settings_desc",
+      "value": "TypeType settings"
+    },
+    {
+      "name": "ime_desc",
+      "value": "TypeType voice input method"
+    },
+    {
+      "name": "mic_reason",
+      "value": "Voice input needs microphone access."
+    }
+  ]
+}

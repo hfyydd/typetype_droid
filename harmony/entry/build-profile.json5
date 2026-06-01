@@ -1,0 +1,17 @@
+{
+  "apiType": "stageMode",
+  "targets": [
+    {
+      "name": "default",
+      "runtimeOS": "OpenHarmony",
+      "config": {
+        "deviceType": [
+          "default"
+        ]
+      },
+      "output": {
+        "artifactName": "typetype-harmonyos-6.1-entry"
+      }
+    }
+  ]
+}

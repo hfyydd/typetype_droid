@@ -2,8 +2,15 @@
 .cxx/
 .omx/
 .artifacts/
+.hvigor/
 build/
 app/build/
+harmony/.hvigor/
+harmony/build/
+harmony/entry/build/
+harmony/oh_modules/
+harmony/entry/oh_modules/
+harmony/signing/
 app/src/main/assets/*.onnx
 app/src/main/assets/sherpa-onnx-*/
 app/src/main/assets/translation-models/
@@ -11,4 +18,6 @@ local.properties
 *.iml
 .DS_Store
 *.apk
+*.hap
+*.app
 *.zip

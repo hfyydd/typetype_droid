@@ -1,0 +1,7 @@
+{
+  "modelVersion": "6.0.0",
+  "name": "typetype-harmony",
+  "version": "1.0.0",
+  "description": "TypeType native HarmonyOS input method",
+  "dependencies": {}
+}

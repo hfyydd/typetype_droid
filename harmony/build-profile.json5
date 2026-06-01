@@ -1,0 +1,45 @@
+{
+  "app": {
+    "signingConfigs": [],
+    "products": [
+      {
+        "name": "default",
+        "bundleName": "com.typetype.harmony",
+        "compileSdkVersion": 23,
+        "compatibleSdkVersion": 23,
+        "targetSdkVersion": 23,
+        "runtimeOS": "OpenHarmony",
+        "bundleType": "app",
+        "versionCode": 610001,
+        "versionName": "0.1.0-harmonyos-6.1",
+        "label": "$string:app_name",
+        "icon": "$media:app_icon",
+        "output": {
+          "artifactName": "typetype-harmonyos-6.1"
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}
