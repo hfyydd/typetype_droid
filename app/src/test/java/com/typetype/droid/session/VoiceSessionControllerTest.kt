@@ -208,6 +208,108 @@ class VoiceSessionControllerTest {
     }
 
     @Test
+    fun streamingRewriteButtonStructuresAndReplacesCurrentText() {
+        val connection = FakeEditableInputConnection()
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.StreamingText("今天有两件事第一测试流式第二检查粤语"))
+        assertEquals("今天有两件事第一测试流式第二检查粤语", controller.state.draftText)
+        controller.handle(SessionEvent.StreamingRewriteRequested)
+
+        assertEquals("今天有两件事：\n1. 测试流式。\n2. 检查粤语。", connection.text)
+        assertEquals(VoiceSessionState.Phase.IDLE, controller.state.phase)
+    }
+
+    @Test
+    fun streamingTextDropsUnknownArtifactsAndKeepsEnglish() {
+        val connection = FakeEditableInputConnection()
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.StreamingText("有<unk> enough，<unk>行了"))
+
+        assertEquals("有 enough，行了", connection.text)
+        assertEquals("有 enough，行了", controller.state.draftText)
+    }
+
+    @Test
+    fun longStreamingDraftIsKeptCompleteForScrollablePanel() {
+        val connection = FakeEditableInputConnection()
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+        val longText = "这个地方先讲研究方法再讲结论然后讲风险最后讲下一步安排".repeat(4)
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.StreamingText(longText))
+
+        assertEquals(longText, controller.state.draftText)
+        assertEquals(longText, connection.text)
+    }
+
+    @Test
+    fun streamingRewriteButtonUsesEditorTextWhenStreamingCacheIsEmpty() {
+        val connection = FakeEditableInputConnection("今天有两件事第一测试流式第二检查粤语")
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.StreamingRewriteRequested)
+
+        assertEquals("今天有两件事：\n1. 测试流式。\n2. 检查粤语。", connection.text)
+        assertEquals(VoiceSessionState.Phase.IDLE, controller.state.phase)
+    }
+
+    @Test
+    fun streamingRewritePrefersRefreshedEditorTextOverStaleStreamingCache() {
+        val oldConnection = FakeEditableInputConnection()
+        val newConnection = FakeEditableInputConnection("今天有两件事第一整理微信输入框第二测试AI带入")
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(oldConnection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.StreamingText("旧的流式缓存"))
+        controller.refreshInputConnection(newConnection)
+        controller.handle(SessionEvent.StreamingRewriteRequested)
+
+        assertEquals("旧的流式缓存", oldConnection.text)
+        assertEquals("今天有两件事：\n1. 整理微信输入框。\n2. 测试AI带入。", newConnection.text)
+        assertEquals(VoiceSessionState.Phase.IDLE, controller.state.phase)
+    }
+
+    @Test
     fun offlineModeCommitsStructuredWholeUtterance() {
         val connection = FakeEditableInputConnection()
         val asrEngineFactory = FakeAsrEngineFactory()

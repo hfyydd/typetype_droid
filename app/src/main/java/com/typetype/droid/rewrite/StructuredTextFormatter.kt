@@ -1,5 +1,7 @@
 package com.typetype.droid.rewrite
 
+import java.util.Locale
+
 object StructuredTextFormatter {
     private val fillerPattern = Regex("""(?i)\b(um|uh|like|you know)\b|嗯+|呃+|那个|就是说""")
     private val sentenceEndingPattern = Regex("""[。！？!?]$""")
@@ -12,6 +14,7 @@ object StructuredTextFormatter {
     private val questionPrefixPattern = Regex("""^(请问|问一下|我想问|想问一下|麻烦问一下)""")
     private val questionCuePattern = Regex("""(是否|是不是|能不能|可不可以|有没有|要不要|好不好|行不行|对不对|需不需要|会不会|为什么|怎么|怎样|哪里|哪儿|哪个|哪些|多少|谁|啥)""")
     private val whitespacePattern = Regex("""\s+""")
+    private val uppercaseEnglishTokenPattern = Regex("""\b[A-Z][A-Z0-9]*(?:[-/][A-Z0-9]+)*\b""")
 
     private val enumerationMarkers = listOf(
         "第一",
@@ -44,6 +47,21 @@ object StructuredTextFormatter {
         return punctuateQuestionClauses(text)
     }
 
+    fun removeAsrArtifacts(text: String): String {
+        return text
+            .replace(Regex("""(?i)<\s*unk\s*>"""), "")
+            .replace(Regex("""(?i)\bunk\b"""), "")
+            .replace(Regex("""([。！？!?])\s*[，,、；;：:]+"""), "\$1")
+            .replace(Regex("""[，,、；;：:]+\s*([。！？!?])"""), "\$1")
+            .replace(Regex("""([。！？!?])\s*([。！？!?])+"""), "\$1")
+            .replace(Regex("""[，,、；;：:]{2,}"""), "，")
+            .replace(Regex("""[^\S\r\n]+"""), " ")
+            .replace(Regex("""[^\S\r\n]*(\r?\n)[^\S\r\n]*"""), "\$1")
+            .let(::normalizeEnglishCasing)
+            .trim()
+            .trim('，', ',', '；', ';', '：', ':', ' ')
+    }
+
     fun ensureFinalPunctuation(text: String): String {
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return trimmed
@@ -64,7 +82,29 @@ object StructuredTextFormatter {
         return text
             .replace(fillerPattern, "")
             .replace(whitespacePattern, " ")
+            .let(::normalizeEnglishCasing)
             .trim()
+    }
+
+    private fun normalizeEnglishCasing(text: String): String {
+        return uppercaseEnglishTokenPattern.replace(text) { match ->
+            normalizeUppercaseEnglishToken(match.value)
+        }.let(::normalizeKnownEnglishPhrases)
+    }
+
+    private fun normalizeUppercaseEnglishToken(token: String): String {
+        val canonical = canonicalEnglishTokens[token]
+        if (canonical != null) return canonical
+        if (token.length == 1) return token
+        if (preservedUppercaseEnglishTokens.contains(token)) return token
+        if (token.any(Char::isDigit) && token.any { it in 'A'..'Z' }) return token
+        return token.lowercase(Locale.US)
+    }
+
+    private fun normalizeKnownEnglishPhrases(text: String): String {
+        return text
+            .replace(Regex("""\bML kit\b"""), "ML Kit")
+            .replace(Regex("""\bOpenai\b"""), "OpenAI")
     }
 
     private fun formatEnumeratedSpeech(text: String): String? {
@@ -220,5 +260,42 @@ object StructuredTextFormatter {
         "未確定",
         "没确定",
         "沒確定",
+    )
+    private val preservedUppercaseEnglishTokens = setOf(
+        "AI",
+        "API",
+        "APK",
+        "ASR",
+        "CPU",
+        "DNS",
+        "GPU",
+        "GPT",
+        "HTTP",
+        "HTTPS",
+        "HY-MT",
+        "HY-MT2",
+        "IP",
+        "JSON",
+        "LLM",
+        "ML",
+        "NLLB",
+        "OCR",
+        "OK",
+        "PCS",
+        "PDF",
+        "SDK",
+        "TLS",
+        "UI",
+        "URL",
+        "USB",
+        "VPN",
+    )
+    private val canonicalEnglishTokens = mapOf(
+        "ANDROID" to "Android",
+        "OPENAI" to "OpenAI",
+        "IPHONE" to "iPhone",
+        "IOS" to "iOS",
+        "TYPE" to "type",
+        "TYPETYPE" to "TypeType",
     )
 }

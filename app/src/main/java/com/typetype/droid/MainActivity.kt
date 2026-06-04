@@ -9,21 +9,31 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import com.typetype.droid.session.DictationMode
+import com.typetype.droid.settings.LlmProviderPresets
+import com.typetype.droid.settings.RewriteBackendPreference
+import com.typetype.droid.settings.RewriteScenario
+import com.typetype.droid.settings.StreamingEnhancementMode
+import com.typetype.droid.settings.StreamingModelPreference
 import com.typetype.droid.settings.VoiceImePreferences
+import com.typetype.droid.settings.VoicePackagePreference
 import com.typetype.droid.translation.TranslationBackend
 import com.typetype.droid.translation.TranslationOutputMode
 import com.typetype.droid.translation.TranslationSettings
@@ -41,7 +51,13 @@ class MainActivity : Activity() {
     private lateinit var hyMtBackendOption: TextView
     private lateinit var mlKitBackendOption: TextView
     private lateinit var targetLanguageSpinner: Spinner
+    private lateinit var llmProviderSpinner: Spinner
+    private lateinit var llmApiKeyInput: EditText
+    private lateinit var llmBaseUrlInput: EditText
+    private lateinit var llmModelInput: EditText
+    private lateinit var llmStatusText: TextView
     private var suppressTargetLanguageSelection = false
+    private var suppressLlmProviderSelection = false
 
     @Suppress("DEPRECATION")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +109,14 @@ class MainActivity : Activity() {
         content.addView(space(1, dp(16)))
         content.addView(
             translationSelector(),
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        content.addView(space(1, dp(16)))
+        content.addView(
+            android031Selector(),
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -511,6 +535,403 @@ class MainActivity : Activity() {
             }
             addView(targetLanguageSpinner, LinearLayout.LayoutParams(0, dp(42), 1f))
         }
+    }
+
+    private fun android031Selector(): View {
+        val settings = preferences.loadAndroid031Settings()
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(
+                settingsSectionCard(
+                    title = "流式设置",
+                    desc = "决定实时听写的速度、准确率和流式整理入口。",
+                    icon = R.drawable.ic_stream_line,
+                ) {
+                    addView(
+                        dropdownRow(
+                            title = "实时模型",
+                            desc = "多语言实时适合日常；中文高准确率适合长句和客户对话。",
+                            labels = StreamingModelPreference.entries.map { it.label },
+                            selectedIndex = StreamingModelPreference.entries.indexOf(settings.streamingModel),
+                        ) { index ->
+                            preferences.saveStreamingModel(StreamingModelPreference.entries[index])
+                        },
+                    )
+                    addView(
+                        dropdownRow(
+                            title = "识别策略",
+                            desc = "轻量实时优先启动速度；高准确率优先会预热更重的本地识别资源。",
+                            labels = VoicePackagePreference.entries.map { it.label },
+                            selectedIndex = VoicePackagePreference.entries.indexOf(settings.voicePackage),
+                        ) { index ->
+                            preferences.saveVoicePackage(VoicePackagePreference.entries[index])
+                        },
+                    )
+                    addView(
+                        dropdownRow(
+                            title = "流式处理方式",
+                            desc = "离线隐私增强只做本机标点和术语保护；AI 联网增强可一键润写当前文字。",
+                            labels = StreamingEnhancementMode.entries.map { it.label },
+                            selectedIndex = StreamingEnhancementMode.entries.indexOf(settings.streamingEnhancementMode),
+                        ) { index ->
+                            preferences.saveStreamingEnhancementMode(StreamingEnhancementMode.entries[index])
+                        },
+                    )
+                    addView(settingsSwitch("流式整理面板", "在输入法面板显示整理方式和一键带入按钮。", settings.streamingAiPanelEnabled) {
+                        preferences.saveStreamingAiPanelEnabled(it)
+                    })
+                    addView(
+                        dropdownRow(
+                            title = "流式润写场景",
+                            desc = "流式整理带入会按这个模板处理；与 Windows 端模板保持一致。",
+                            labels = RewriteScenario.entries.map { it.menuLabel },
+                            selectedIndex = RewriteScenario.entries.indexOf(settings.rewriteScenario),
+                        ) { index ->
+                            preferences.saveRewriteScenario(RewriteScenario.entries[index])
+                        },
+                    )
+                },
+            )
+            addView(space(1, dp(16)))
+            addView(
+                settingsSectionCard(
+                    title = "稳妥设置",
+                    desc = "稳妥模式会先完成识别，再按所选方式一次性写入。",
+                    icon = R.drawable.ic_switch_line,
+                ) {
+                    addView(
+                        dropdownRow(
+                            title = "稳妥模式处理",
+                            desc = "离线结构化不联网；AI 联网润写会调用你配置的模型并清理思考过程。",
+                            labels = RewriteBackendPreference.entries.map { it.label },
+                            selectedIndex = RewriteBackendPreference.entries.indexOf(settings.rewriteBackend),
+                        ) { index ->
+                            preferences.saveRewriteBackend(RewriteBackendPreference.entries[index])
+                            refreshLlmFormIfReady()
+                        },
+                    )
+                    addView(settingsSwitch("结构化润写", "自动补标点、去口头语、整理枚举列表。", settings.voiceFormattingEnabled) {
+                        preferences.saveVoiceFormattingEnabled(it)
+                    })
+                },
+            )
+            addView(space(1, dp(16)))
+            addView(
+                settingsSectionCard(
+                    title = "术语与词库治理",
+                    desc = "管理本地词库、自动学习和 code-switch 保护，减少人名、品牌、项目名被误改。",
+                    icon = R.drawable.ic_keyboard_line,
+                ) {
+                    addView(settingsSwitch("自动学习词汇", "识别到的新词进入本地个人词典，用于后续术语保护。", settings.autoLearningEnabled) {
+                        preferences.saveAutoLearningEnabled(it)
+                    })
+                    addView(settingsSwitch("本地大词库保护", "启用系统基础词库和 code-switch 词库，减少专名被误改。", settings.systemLexiconEnabled) {
+                        preferences.saveSystemLexiconEnabled(it)
+                    })
+                },
+            )
+            addView(space(1, dp(16)))
+            addView(
+                settingsSectionCard(
+                    title = "AI 平台",
+                    desc = "兼容 OpenAI 风格接口，适合连接你自己的模型平台。",
+                    icon = R.drawable.ic_mic_line,
+                ) {
+                    addView(llmRewritePanel(settings))
+                },
+            )
+        }
+    }
+
+    private fun settingsSectionCard(
+        title: String,
+        desc: String,
+        icon: Int,
+        buildContent: LinearLayout.() -> Unit,
+    ): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(18))
+            background = sectionCardBackground()
+            elevation = dp(1).toFloat()
+            addView(featureHeader(title, desc, icon))
+            buildContent()
+        }
+    }
+
+    private fun featureHeader(title: String, desc: String, icon: Int): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                ImageView(this@MainActivity).apply {
+                    setImageResource(icon)
+                    setColorFilter(COLOR_ACCENT)
+                    background = roundedDrawable(COLOR_ACCENT_SOFT, dp(14))
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                },
+                LinearLayout.LayoutParams(dp(40), dp(40)),
+            )
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), 0, 0, 0)
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = title
+                            textSize = 18f
+                            typeface = Typeface.DEFAULT_BOLD
+                            setTextColor(COLOR_TEXT)
+                            includeFontPadding = false
+                        },
+                    )
+                    addView(
+                        TextView(this@MainActivity).apply {
+                            text = desc
+                            textSize = 13.5f
+                            setTextColor(COLOR_MUTED)
+                            setPadding(0, dp(4), 0, 0)
+                            setLineSpacing(dp(2).toFloat(), 1f)
+                        },
+                    )
+                },
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+        }
+    }
+
+    private fun dropdownRow(
+        title: String,
+        desc: String,
+        labels: List<String>,
+        selectedIndex: Int,
+        onSelected: (Int) -> Unit,
+    ): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(14), 0, 0)
+            addView(rowTitle(title, desc))
+            addView(
+                Spinner(this@MainActivity).apply {
+                    background = roundedDrawable(Color.rgb(245, 247, 249), dp(14))
+                    setPadding(dp(12), 0, dp(12), 0)
+                    adapter = ArrayAdapter(
+                        this@MainActivity,
+                        android.R.layout.simple_spinner_item,
+                        labels,
+                    ).apply {
+                        setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                    }
+                    var currentIndex = selectedIndex.coerceAtLeast(0)
+                    setSelection(currentIndex, false)
+                    onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                            if (position == currentIndex) return
+                            currentIndex = position
+                            onSelected(position)
+                        }
+
+                        override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                    }
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)).apply {
+                    topMargin = dp(8)
+                },
+            )
+        }
+    }
+
+    private fun settingsSwitch(
+        title: String,
+        desc: String,
+        checked: Boolean,
+        onCheckedChanged: (Boolean) -> Unit,
+    ): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(14), 0, 0)
+            addView(
+                rowTitle(title, desc),
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(
+                Switch(this@MainActivity).apply {
+                    isChecked = checked
+                    setOnCheckedChangeListener { _, value -> onCheckedChanged(value) }
+                },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
+    }
+
+    private fun rowTitle(title: String, desc: String): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = title
+                    textSize = 15f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(COLOR_TEXT)
+                    includeFontPadding = false
+                },
+            )
+            addView(
+                TextView(this@MainActivity).apply {
+                    text = desc
+                    textSize = 12.5f
+                    setTextColor(COLOR_MUTED)
+                    setPadding(0, dp(4), 0, 0)
+                    setLineSpacing(dp(2).toFloat(), 1f)
+                },
+            )
+        }
+    }
+
+    private fun llmRewritePanel(settings: com.typetype.droid.settings.Android031Settings): View {
+        val llm = settings.llmRewrite
+        val providerIndex = LlmProviderPresets.all.indexOfFirst { it.key == llm.providerKey }.coerceAtLeast(0)
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(18), 0, 0)
+            addView(settingsSwitch("LLM 结构化润写 API", "填写平台、模型和 Key 后，原文听写可进入联网结构化整理。", llm.enabled) {
+                preferences.saveLlmEnabled(it)
+            })
+            addView(rowTitle("模型平台", LlmProviderPresets.presetFor(llm.providerKey).apiKeyHelp))
+            llmProviderSpinner = Spinner(this@MainActivity).apply {
+                background = roundedDrawable(Color.rgb(245, 247, 249), dp(14))
+                setPadding(dp(12), 0, dp(12), 0)
+                adapter = ArrayAdapter(
+                    this@MainActivity,
+                    android.R.layout.simple_spinner_item,
+                    LlmProviderPresets.all.map { it.label },
+                ).apply {
+                    setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                }
+                setSelection(providerIndex, false)
+                onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                    override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                        if (suppressLlmProviderSelection) return
+                        val provider = LlmProviderPresets.all[position]
+                        if (preferences.loadAndroid031Settings().llmRewrite.providerKey != provider.key) {
+                            preferences.saveLlmProvider(provider.key)
+                            refreshLlmForm()
+                        }
+                    }
+
+                    override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                }
+            }
+            addView(llmProviderSpinner, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)).apply {
+                topMargin = dp(8)
+            })
+            llmBaseUrlInput = settingsEditText(llm.baseUrl, "Base URL")
+            addView(llmBaseUrlInput)
+            llmModelInput = settingsEditText(llm.model, "模型名")
+            addView(llmModelInput)
+            llmApiKeyInput = settingsEditText(llm.apiKey, "API Key", password = true)
+            addView(llmApiKeyInput)
+            llmStatusText = TextView(this@MainActivity).apply {
+                text = "未测试连接"
+                textSize = 12.5f
+                setTextColor(COLOR_MUTED)
+                setPadding(0, dp(8), 0, 0)
+            }
+            addView(llmStatusText)
+            addView(
+                solidActionButton("测试连接") { button -> testLlmConnection(button) },
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44)).apply {
+                    topMargin = dp(10)
+                },
+            )
+        }
+    }
+
+    private fun settingsEditText(initialValue: String, hintText: String, password: Boolean = false): EditText {
+        return EditText(this).apply {
+            setText(initialValue)
+            hint = hintText
+            textSize = 13.5f
+            setSingleLine(true)
+            setPadding(dp(12), 0, dp(12), 0)
+            background = roundedDrawable(Color.rgb(245, 247, 249), dp(14))
+            inputType = if (password) {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            } else {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            }
+            setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) saveLlmForm()
+            }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)).apply {
+                topMargin = dp(8)
+            }
+        }
+    }
+
+    private fun refreshLlmForm() {
+        val llm = preferences.loadAndroid031Settings().llmRewrite
+        suppressLlmProviderSelection = true
+        llmProviderSpinner.setSelection(LlmProviderPresets.all.indexOfFirst { it.key == llm.providerKey }.coerceAtLeast(0), false)
+        suppressLlmProviderSelection = false
+        llmBaseUrlInput.setText(llm.baseUrl)
+        llmModelInput.setText(llm.model)
+        llmApiKeyInput.setText(llm.apiKey)
+        llmStatusText.text = LlmProviderPresets.presetFor(llm.providerKey).apiKeyHelp
+    }
+
+    private fun refreshLlmFormIfReady() {
+        if (::llmProviderSpinner.isInitialized &&
+            ::llmBaseUrlInput.isInitialized &&
+            ::llmModelInput.isInitialized &&
+            ::llmApiKeyInput.isInitialized &&
+            ::llmStatusText.isInitialized
+        ) {
+            refreshLlmForm()
+        }
+    }
+
+    private fun saveLlmForm() {
+        if (!::llmApiKeyInput.isInitialized) return
+        preferences.saveLlmBaseUrl(llmBaseUrlInput.text.toString())
+        preferences.saveLlmModel(llmModelInput.text.toString())
+        preferences.saveLlmApiKey(llmApiKeyInput.text.toString())
+    }
+
+    private fun solidActionButton(label: String, onClick: (TextView) -> Unit): TextView {
+        return TextView(this).apply {
+            text = label
+            gravity = Gravity.CENTER
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            includeFontPadding = false
+            setTextColor(Color.WHITE)
+            background = roundedDrawable(COLOR_TEXT, dp(14))
+            isClickable = true
+            isFocusable = true
+            foreground = selectableForeground()
+            setOnClickListener { onClick(this) }
+        }
+    }
+
+    private fun testLlmConnection(button: TextView) {
+        saveLlmForm()
+        val config = preferences.loadAndroid031Settings().llmRewrite.copy(enabled = true)
+        if (config.apiKey.isBlank()) {
+            Toast.makeText(this, "请先填写 API Key", Toast.LENGTH_SHORT).show()
+            return
+        }
+        button.isEnabled = false
+        llmStatusText.text = "正在测试连接..."
+        Thread {
+            val result = (application as TypeTypeApplication).llmRewriteEngine.testConnection(config)
+            runOnUiThread {
+                button.isEnabled = true
+                llmStatusText.text = result.message
+                llmStatusText.setTextColor(if (result.ok) COLOR_ACCENT_DEEP else Color.rgb(191, 64, 64))
+            }
+        }.start()
     }
 
     private fun modeOption(text: String, onClick: () -> Unit): TextView {

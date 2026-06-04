@@ -15,6 +15,10 @@ class InputCommitController(
         resetSession()
     }
 
+    fun updateConnection(connection: EditableInputConnection?) {
+        this.connection = connection
+    }
+
     fun detach() {
         connection = null
         hasWrittenOutput = false
@@ -78,6 +82,10 @@ class InputCommitController(
 
     fun currentStreamingText(): String = committedStreamingText + diffWriter.currentText()
 
+    fun textBeforeCursor(maxLength: Int): String {
+        return connection?.getTextBeforeCursor(maxLength)?.toString() ?: ""
+    }
+
     fun cursorIsAtStart(): Boolean {
         val target = connection ?: return false
         return target.getTextBeforeCursor(1)?.isEmpty() != false
@@ -122,6 +130,31 @@ class InputCommitController(
             val committed = deleted && (text.isBlank() || target.commitText(text))
             if (committed) {
                 hasWrittenOutput = text.isNotBlank()
+                committedStreamingText = ""
+                diffWriter.reset()
+            }
+            committed
+        } finally {
+            target.endBatchEdit()
+        }
+    }
+
+    fun replaceTextBeforeCursor(previous: String, replacement: String): Boolean {
+        val target = connection ?: return false
+        if (previous.isBlank()) return false
+        val cachedBeforeCursor = target.getTextBeforeCursor(previous.length)?.toString()
+        if (cachedBeforeCursor != previous) {
+            return false
+        }
+
+        if (!target.beginBatchEdit()) {
+            return false
+        }
+        return try {
+            val deleted = target.deleteBeforeCursor(previous.length)
+            val committed = deleted && (replacement.isBlank() || target.commitText(replacement))
+            if (committed) {
+                hasWrittenOutput = replacement.isNotBlank()
                 committedStreamingText = ""
                 diffWriter.reset()
             }

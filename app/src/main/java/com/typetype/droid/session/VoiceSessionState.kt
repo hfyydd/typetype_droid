@@ -4,6 +4,7 @@ data class VoiceSessionState(
     val mode: DictationMode = DictationMode.STREAMING,
     val phase: Phase = Phase.IDLE,
     val error: String? = null,
+    val draftText: String = "",
 ) {
     val isActive: Boolean
         get() = phase == Phase.STARTING ||

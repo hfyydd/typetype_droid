@@ -18,8 +18,9 @@ class FakeEditableInputConnection(initialText: String = "") : EditableInputConne
     }
 
     override fun getTextBeforeCursor(length: Int): CharSequence? {
-        if (length < 0 || length > buffer.length) return null
-        return buffer.substring(buffer.length - length, buffer.length)
+        if (length < 0) return null
+        val safeLength = minOf(length, buffer.length)
+        return buffer.substring(buffer.length - safeLength, buffer.length)
     }
 
     override fun beginBatchEdit(): Boolean = true

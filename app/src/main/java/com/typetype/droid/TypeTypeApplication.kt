@@ -2,6 +2,8 @@ package com.typetype.droid
 
 import android.app.Application
 import com.typetype.droid.asr.SherpaAsrEngineFactory
+import com.typetype.droid.dictionary.DictionaryStore
+import com.typetype.droid.rewrite.LlmRewriteEngine
 import com.typetype.droid.session.DictationMode
 import com.typetype.droid.settings.VoiceImePreferences
 import com.typetype.droid.translation.TranslationBackend
@@ -21,6 +23,10 @@ class TypeTypeApplication : Application() {
         private set
     lateinit var mlKitTranslationEngine: TranslationEngine
         private set
+    lateinit var dictionaryStore: DictionaryStore
+        private set
+    lateinit var llmRewriteEngine: LlmRewriteEngine
+        private set
 
     private val preloadExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "TypeTypeModelPreload").apply {
@@ -34,6 +40,8 @@ class TypeTypeApplication : Application() {
         asrEngineFactory = SherpaAsrEngineFactory(assets)
         hyMtTranslationEngine = HyMtTranslationEngine(this)
         mlKitTranslationEngine = MlKitTranslationEngine()
+        dictionaryStore = DictionaryStore(this)
+        llmRewriteEngine = LlmRewriteEngine()
         val preferences = VoiceImePreferences(this)
         warmUpAsr(preferences.loadEffectiveMode())
         val translationSettings = preferences.loadTranslationSettings()

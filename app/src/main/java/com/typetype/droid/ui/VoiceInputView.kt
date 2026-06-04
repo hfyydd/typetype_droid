@@ -16,21 +16,26 @@ import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import com.typetype.droid.R
 import com.typetype.droid.session.VoiceSessionState
+import com.typetype.droid.settings.Android031Settings
+import com.typetype.droid.settings.StreamingEnhancementMode
 
 class VoiceInputView(context: Context) : LinearLayout(context) {
     var onMicClicked: (() -> Unit)? = null
     var onDeleteClicked: (() -> Unit)? = null
     var onDeleteAllClicked: (() -> Unit)? = null
+    var onRewriteClicked: (() -> Unit)? = null
     private val baseBottomPadding = dp(12)
     private val handler = Handler(Looper.getMainLooper())
     private var deleteRepeating = false
@@ -63,6 +68,100 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
         maxLines = 2
         ellipsize = TextUtils.TruncateAt.END
         visibility = GONE
+    }
+    private val aiModeBadgeView = TextView(context).apply {
+        textSize = 11.5f
+        gravity = Gravity.CENTER
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        includeFontPadding = false
+        setTextColor(COLOR_TEXT)
+        setPadding(dp(9), 0, dp(9), 0)
+        background = roundedDrawable(Color.rgb(226, 244, 238), dp(12))
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+    }
+    private val aiTitleView = TextView(context).apply {
+        textSize = 13f
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        setTextColor(COLOR_TEXT)
+        includeFontPadding = false
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+    }
+    private val aiDescView = TextView(context).apply {
+        textSize = 11.5f
+        setTextColor(COLOR_MUTED)
+        includeFontPadding = false
+        maxLines = 3
+        ellipsize = TextUtils.TruncateAt.END
+        setLineSpacing(dp(1).toFloat(), 1f)
+    }
+    private val aiDraftView = TextView(context).apply {
+        textSize = 12.5f
+        setTextColor(COLOR_MUTED)
+        includeFontPadding = false
+        maxLines = Int.MAX_VALUE
+        ellipsize = null
+        setLineSpacing(dp(2).toFloat(), 1f)
+        setSingleLine(false)
+        text = "临时润写草稿会显示在这里"
+    }
+    private val aiDraftScrollView = ScrollView(context).apply {
+        isFillViewport = false
+        isVerticalScrollBarEnabled = true
+        scrollBarStyle = View.SCROLLBARS_INSIDE_INSET
+        overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        setPadding(dp(10), dp(8), dp(6), dp(8))
+        background = roundedDrawable(Color.rgb(255, 255, 255), dp(12)).apply {
+            setStroke(dp(1), Color.rgb(219, 229, 226))
+        }
+        addView(
+            aiDraftView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+    }
+    private val aiActionButton = TextView(context).apply {
+        textSize = 12.5f
+        gravity = Gravity.CENTER
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
+        includeFontPadding = false
+        setTextColor(Color.WHITE)
+        background = roundedDrawable(COLOR_TEXT, dp(14))
+        setPadding(dp(12), 0, dp(12), 0)
+        isClickable = true
+        isFocusable = true
+        minWidth = dp(82)
+        setOnClickListener { onRewriteClicked?.invoke() }
+    }
+    private val aiPanelView = LinearLayout(context).apply {
+        orientation = VERTICAL
+        gravity = Gravity.CENTER_VERTICAL
+        visibility = GONE
+        background = aiPanelBackground()
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        addView(
+            LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(aiModeBadgeView, LayoutParams(0, dp(26), 1f))
+                addView(aiActionButton, LayoutParams(LayoutParams.WRAP_CONTENT, dp(32)).apply {
+                    leftMargin = dp(10)
+                })
+            },
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT),
+        )
+        addView(aiTitleView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(8)
+        })
+        addView(aiDraftScrollView, LayoutParams(LayoutParams.MATCH_PARENT, dp(92)).apply {
+            topMargin = dp(7)
+        })
+        addView(aiDescView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(5)
+        })
     }
     private val deleteButton = ImageButton(context).apply {
         contentDescription = context.getString(R.string.delete_key)
@@ -119,6 +218,12 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
                 topMargin = dp(4)
             },
         )
+        addView(
+            aiPanelView,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(6)
+            },
+        )
         addView(micRow, LayoutParams(LayoutParams.MATCH_PARENT, dp(80)))
 
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
@@ -170,6 +275,41 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
         }
     }
 
+    fun configureAndroid031(settings: Android031Settings) {
+        if (!settings.streamingAiPanelEnabled) {
+            aiPanelView.visibility = GONE
+            return
+        }
+        val aiConfigured = settings.llmRewrite.enabled &&
+            settings.llmRewrite.apiKey.isNotBlank() &&
+            settings.llmRewrite.baseUrl.isNotBlank() &&
+            settings.llmRewrite.model.isNotBlank()
+        val scenarioLabel = "${settings.rewriteScenario.group} · ${settings.rewriteScenario.label}"
+        if (settings.streamingEnhancementMode == StreamingEnhancementMode.ONLINE_ENHANCED) {
+            aiModeBadgeView.text = if (aiConfigured) "AI 联网增强" else "AI 联网增强待配置"
+            aiTitleView.text = "模板：$scenarioLabel"
+            aiDescView.text = if (aiConfigured) {
+                "点击后停止听写，按模板修正中英夹杂、标点和口头语，再替换输入框。"
+            } else {
+                "未配置模型 Key 时先用离线隐私增强；配置后自动启用联网润写。"
+            }
+            aiActionButton.text = if (aiConfigured) "AI带入" else "离线带入"
+            aiActionButton.background = roundedDrawable(if (aiConfigured) COLOR_TEXT else COLOR_ACCENT, dp(14))
+            aiModeBadgeView.background = roundedDrawable(
+                if (aiConfigured) Color.rgb(229, 236, 255) else Color.rgb(232, 238, 246),
+                dp(12),
+            )
+        } else {
+            aiModeBadgeView.text = "离线隐私增强"
+            aiTitleView.text = "模板：$scenarioLabel"
+            aiDescView.text = "点击后停止听写，在本机补标点、保护术语、清理口头语并替换输入框。"
+            aiActionButton.text = "整理带入"
+            aiActionButton.background = roundedDrawable(COLOR_ACCENT, dp(14))
+            aiModeBadgeView.background = roundedDrawable(Color.rgb(226, 244, 238), dp(12))
+        }
+        aiPanelView.visibility = VISIBLE
+    }
+
     fun render(state: VoiceSessionState) {
         val statusColor: Int
         val newStatusText = when {
@@ -214,6 +354,7 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
             errorDetailView.text = ""
             errorDetailView.visibility = GONE
         }
+        renderDraftText(state.draftText)
 
         // Animate status dot color change
         animateStatusDotColor(statusColor)
@@ -230,6 +371,20 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
             } else {
                 stopPulseAnimations()
             }
+        }
+    }
+
+    private fun renderDraftText(draftText: String) {
+        val trimmed = draftText.trim()
+        if (trimmed.isBlank()) {
+            aiDraftView.text = "临时润写草稿会显示在这里"
+            aiDraftView.setTextColor(COLOR_MUTED)
+        } else {
+            aiDraftView.text = trimmed
+            aiDraftView.setTextColor(COLOR_TEXT)
+        }
+        aiDraftScrollView.post {
+            aiDraftScrollView.fullScroll(View.FOCUS_DOWN)
         }
     }
 
@@ -463,6 +618,16 @@ class VoiceInputView(context: Context) : LinearLayout(context) {
     private fun keyBackground(color: Int): GradientDrawable {
         return roundedDrawable(color, dp(12)).apply {
             setStroke(dp(1), Color.rgb(207, 212, 220))
+        }
+    }
+
+    private fun aiPanelBackground(): GradientDrawable {
+        return GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            intArrayOf(Color.rgb(249, 252, 251), Color.rgb(238, 246, 244)),
+        ).apply {
+            cornerRadius = dp(16).toFloat()
+            setStroke(dp(1), Color.rgb(207, 226, 221))
         }
     }
 

@@ -56,4 +56,36 @@ class StructuredTextFormatterTest {
             StructuredTextFormatter.punctuateStreamingQuestions("你今天有没有空，明天继续测试"),
         )
     }
+
+    @Test
+    fun asrUnknownArtifactsAreRemovedWithoutDroppingEnglish() {
+        assertEquals(
+            "有 enough，行了",
+            StructuredTextFormatter.removeAsrArtifacts("有<unk> enough，<unk>行了"),
+        )
+        assertEquals(
+            "有，够。行了",
+            StructuredTextFormatter.removeAsrArtifacts("有<unk>，够。<unk>，<unk><unk>，行了"),
+        )
+    }
+
+    @Test
+    fun uppercaseAsrEnglishBecomesNaturalCasing() {
+        assertEquals(
+            "你好呀，小伙子，hello hello hello。",
+            StructuredTextFormatter.removeAsrArtifacts("你好呀，小伙子，HELLO HELLO HELLO。"),
+        )
+        assertEquals(
+            "hello，go to sleep。OK 了。",
+            StructuredTextFormatter.removeAsrArtifacts("HELLO，GO TO SLEEP。OK 了。"),
+        )
+    }
+
+    @Test
+    fun technicalEnglishAcronymsKeepCanonicalCasing() {
+        assertEquals(
+            "AI API USB APK OK ML Kit OpenAI iOS Android HY-MT2",
+            StructuredTextFormatter.removeAsrArtifacts("AI API USB APK OK ML KIT OPENAI IOS ANDROID HY-MT2"),
+        )
+    }
 }

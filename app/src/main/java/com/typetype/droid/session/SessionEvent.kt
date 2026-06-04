@@ -14,6 +14,7 @@ sealed interface SessionEvent {
     ) : SessionEvent
     data class StreamingText(val text: String) : SessionEvent
     data object StreamingSegmentFinished : SessionEvent
+    data object StreamingRewriteRequested : SessionEvent
     data class OfflineText(val text: String) : SessionEvent
     data class Error(val message: String) : SessionEvent
 }

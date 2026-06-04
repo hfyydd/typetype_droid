@@ -12,6 +12,7 @@ import com.k2fsa.sherpa.onnx.getFeatureConfig
 import com.k2fsa.sherpa.onnx.getModelConfig
 import com.k2fsa.sherpa.onnx.getOfflineModelConfig
 import com.typetype.droid.audio.AudioCaptureEngine
+import com.typetype.droid.rewrite.StructuredTextFormatter
 import com.typetype.droid.session.DictationMode
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -29,6 +30,7 @@ class SherpaAsrEngineFactory(
         return when (mode) {
             DictationMode.STREAMING -> SherpaStreamingAsrEngine(
                 recognizer = streamingRecognizer(),
+                fallbackRecognizerProvider = { offlineRecognizer() },
                 onEvent = onEvent,
             )
 
@@ -93,6 +95,7 @@ class SherpaAsrEngineFactory(
 
 private class SherpaStreamingAsrEngine(
     private val recognizer: OnlineRecognizer,
+    private val fallbackRecognizerProvider: () -> OfflineRecognizer,
     private val onEvent: (AsrEvent) -> Unit,
 ) : AsrEngine {
     private var stream = recognizer.createStream()
@@ -101,11 +104,15 @@ private class SherpaStreamingAsrEngine(
 
     private var lastTextEventTimeMs = 0L
     private var pendingText: String? = null
+    private val segmentChunks = mutableListOf<FloatArray>()
+    private var segmentSampleCount = 0
+    private var sawUnknownInSegment = false
 
     @SuppressLint("DefaultLocale")
     override fun acceptSamples(samples: FloatArray) {
         if (closed.get()) return
         val currentGeneration = generation.get()
+        appendSegmentSamples(samples)
 
         stream.acceptWaveform(samples, AudioCaptureEngine.SAMPLE_RATE)
 
@@ -124,20 +131,30 @@ private class SherpaStreamingAsrEngine(
             }
         }
 
-        if (result.isNotBlank()) {
+        if (containsUnknownToken(result)) {
+            sawUnknownInSegment = true
+        }
+        val cleanedResult = StructuredTextFormatter.removeAsrArtifacts(result)
+
+        if (cleanedResult.isNotBlank()) {
             val now = SystemClock.elapsedRealtime()
             val elapsed = now - lastTextEventTimeMs
             if (elapsed >= MIN_TEXT_EVENT_INTERVAL_MS) {
-                onEvent(AsrEvent.Text(result))
+                onEvent(AsrEvent.Text(cleanedResult))
                 lastTextEventTimeMs = now
                 pendingText = null
             } else {
-                pendingText = result
+                pendingText = cleanedResult
             }
         }
         if (shouldReset) {
             pendingText?.let { onEvent(AsrEvent.Text(it)) }
             pendingText = null
+            val fallbackText = decodeFallbackIfNeeded()
+            if (fallbackText.isNotBlank()) {
+                onEvent(AsrEvent.Text(fallbackText))
+            }
+            clearSegmentSamples()
             lastTextEventTimeMs = SystemClock.elapsedRealtime()
             onEvent(AsrEvent.SegmentFinished)
         }
@@ -154,9 +171,17 @@ private class SherpaStreamingAsrEngine(
             }
             result = recognizer.getResult(stream).text
         }
-        if (result.isNotBlank()) {
-            onEvent(AsrEvent.Text(result))
+        if (containsUnknownToken(result)) {
+            sawUnknownInSegment = true
         }
+        val fallbackText = decodeFallbackIfNeeded()
+        val finalText = fallbackText.ifBlank {
+            StructuredTextFormatter.removeAsrArtifacts(result)
+        }
+        if (finalText.isNotBlank()) {
+            onEvent(AsrEvent.Text(finalText))
+        }
+        clearSegmentSamples()
         onEvent(AsrEvent.SegmentFinished)
     }
 
@@ -166,6 +191,7 @@ private class SherpaStreamingAsrEngine(
             generation.incrementAndGet()
             stream.release()
             stream = recognizer.createStream()
+            clearSegmentSamples()
         }
     }
 
@@ -173,7 +199,51 @@ private class SherpaStreamingAsrEngine(
         synchronized(this) {
             if (!closed.compareAndSet(false, true)) return
             stream.release()
+            clearSegmentSamples()
         }
+    }
+
+    private fun appendSegmentSamples(samples: FloatArray) {
+        synchronized(this) {
+            if (closed.get()) return
+            segmentChunks += samples.copyOf()
+            segmentSampleCount += samples.size
+        }
+    }
+
+    private fun decodeFallbackIfNeeded(): String {
+        if (!sawUnknownInSegment || segmentSampleCount == 0) return ""
+        val samples = mergedSegmentSamples()
+        if (samples.isEmpty()) return ""
+        val fallbackRecognizer = fallbackRecognizerProvider()
+        val stream = fallbackRecognizer.createStream()
+        return try {
+            stream.acceptWaveform(samples, AudioCaptureEngine.SAMPLE_RATE)
+            fallbackRecognizer.decode(stream)
+            StructuredTextFormatter.removeAsrArtifacts(fallbackRecognizer.getResult(stream).text)
+        } finally {
+            stream.release()
+        }
+    }
+
+    private fun mergedSegmentSamples(): FloatArray {
+        val output = FloatArray(segmentSampleCount)
+        var offset = 0
+        segmentChunks.forEach { chunk ->
+            chunk.copyInto(output, destinationOffset = offset)
+            offset += chunk.size
+        }
+        return output
+    }
+
+    private fun clearSegmentSamples() {
+        segmentChunks.clear()
+        segmentSampleCount = 0
+        sawUnknownInSegment = false
+    }
+
+    private fun containsUnknownToken(text: String): Boolean {
+        return unknownTokenPattern.containsMatchIn(text)
     }
 }
 
@@ -243,7 +313,7 @@ private class SherpaOfflineAsrEngine(
         val stream = recognizer.createStream()
         stream.acceptWaveform(samples, AudioCaptureEngine.SAMPLE_RATE)
         recognizer.decode(stream)
-        val text = recognizer.getResult(stream).text
+        val text = StructuredTextFormatter.removeAsrArtifacts(recognizer.getResult(stream).text)
         stream.release()
         if (!closed.get() && decodeGeneration == generation.get() && text.isNotBlank()) {
             onEvent(AsrEvent.Text(text))
@@ -257,3 +327,4 @@ private const val OFFLINE_ZH_MODEL_TYPE = 41
 private const val MIN_TEXT_EVENT_INTERVAL_MS = 100L
 private const val HOTWORDS_ASSET_PATH = "hotwords_zh_cn.txt"
 private const val HOTWORDS_SCORE = 2.0f
+private val unknownTokenPattern = Regex("""(?i)<\s*unk\s*>|\bunk\b""")

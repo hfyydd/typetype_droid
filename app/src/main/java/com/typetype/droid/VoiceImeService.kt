@@ -41,7 +41,10 @@ class VoiceImeService : InputMethodService() {
             asrEngineFactory = app.asrEngineFactory,
             commitController = InputCommitController(),
             translationSettingsProvider = { preferences.loadTranslationSettings() },
+            android031SettingsProvider = { preferences.loadAndroid031Settings() },
             translationEngineResolver = { backend -> app.translationEngineFor(backend) },
+            dictionaryStore = app.dictionaryStore,
+            llmRewriteEngine = app.llmRewriteEngine,
             onStateChanged = { state -> inputViewOrNull()?.render(state) },
             backgroundExecutor = sessionExecutor,
             translationExecutor = translationExecutor,
@@ -64,6 +67,11 @@ class VoiceImeService : InputMethodService() {
             onMicClicked = { toggleListening() }
             onDeleteClicked = { deleteBeforeCursor() }
             onDeleteAllClicked = { deleteAllText() }
+            onRewriteClicked = {
+                sessionController.refreshInputConnection(currentInputConnection?.let(::AndroidInputConnectionAdapter))
+                sessionController.handle(SessionEvent.StreamingRewriteRequested)
+            }
+            configureAndroid031(preferences.loadAndroid031Settings())
         }
         inputView.render(sessionController.state)
         return inputView
@@ -78,6 +86,7 @@ class VoiceImeService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         sessionController.setMode(preferences.loadEffectiveMode())
+        inputViewOrNull()?.configureAndroid031(preferences.loadAndroid031Settings())
         warmUpTranslationIfNeeded()
         sessionController.handle(SessionEvent.PrepareRequested)
         inputViewOrNull()?.render(sessionController.state)
