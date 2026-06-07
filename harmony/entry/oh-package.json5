@@ -3,5 +3,8 @@
   "name": "entry",
   "version": "1.0.0",
   "description": "TypeType HarmonyOS entry module",
-  "dependencies": {}
+  "dependencies": {
+    "libtypetype_hymt.so": "file:./src/main/cpp/types/libtypetype_hymt",
+    "sherpa_onnx": "file:../../third_party/sherpa_onnx-v1.12.21.har"
+  }
 }

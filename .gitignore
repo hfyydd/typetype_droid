@@ -11,6 +11,11 @@ harmony/entry/build/
 harmony/oh_modules/
 harmony/entry/oh_modules/
 harmony/signing/
+harmony/entry/src/main/resources/rawfile/sherpa-onnx-*/
+harmony/entry/src/main/resources/rawfile/translation-models/
+harmony/**/*.har
+third_party/sherpa-onnx-src/
+third_party/sherpa-onnx-harmony-os-api.json
 app/src/main/assets/*.onnx
 app/src/main/assets/sherpa-onnx-*/
 app/src/main/assets/translation-models/

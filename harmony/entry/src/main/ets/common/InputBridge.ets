@@ -30,8 +30,8 @@ export class InputBridge {
     InputBridge.listeners = InputBridge.listeners.filter((item: DraftListener) => item !== listener);
   }
 
-  static updateDraft(rawText: string): void {
-    InputBridge.draft = applyStreamingPunctuation(rawText);
+  static updateDraft(rawText: string, shouldPunctuate: boolean = true): void {
+    InputBridge.draft = shouldPunctuate ? applyStreamingPunctuation(rawText) : rawText.trim();
     InputBridge.emitDraft();
   }
 
@@ -44,8 +44,9 @@ export class InputBridge {
     return InputBridge.draft;
   }
 
-  static async commitFinalText(rawText: string): Promise<boolean> {
-    const text = applyFinalPunctuation(rawText.length > 0 ? rawText : InputBridge.draft);
+  static async commitFinalText(rawText: string, shouldPunctuate: boolean = true): Promise<boolean> {
+    const draftText = rawText.length > 0 ? rawText : InputBridge.draft;
+    const text = shouldPunctuate ? applyFinalPunctuation(draftText) : draftText.trim();
     if (text.length === 0 || InputBridge.currentClient === undefined) {
       return false;
     }

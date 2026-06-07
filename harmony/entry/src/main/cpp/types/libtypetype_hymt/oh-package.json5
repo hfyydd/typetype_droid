@@ -1,0 +1,6 @@
+{
+  "name": "libtypetype_hymt.so",
+  "types": "./Index.d.ts",
+  "version": "1.0.0",
+  "description": "TypeType HY-MT2 native translation bridge."
+}

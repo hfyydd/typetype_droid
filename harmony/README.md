@@ -22,11 +22,11 @@ C:\OpenHarmony\bin\hvigorw.cmd assembleApp
 ```
 
 The generated unsigned package appears under `build\outputs` and
-`entry\build\default\outputs`. The 2026-06-01 local build also creates signed
-distribution artifacts in the repository root:
+`entry\build\default\outputs`. The 2026-06-01 full local ASR build also creates
+signed distribution artifacts in the repository root:
 
-- `C:\typetype_droid\typetype-harmonyos-6.1-2026.06.01-signed.app`
-- `C:\typetype_droid\typetype-harmonyos-6.1-entry-2026.06.01-signed.hap`
+- `C:\typetype_droid\typetype-harmonyos-6.1-full-asr-2026.06.01-signed.app`
+- `C:\typetype_droid\typetype-harmonyos-6.1-full-asr-2026.06.01-signed.hap`
 
 The public SDK installed locally is OpenHarmony 6.1 API 23
 (`openharmony-6.1.0.31`). Huawei commercial HarmonyOS 6.1 devices can report API
@@ -47,6 +47,8 @@ The first native milestone focuses on:
   input box;
 - preserving the punctuation helper used by the Android stream and translation
   flow.
+- running local streaming ASR with `sherpa_onnx` on Harmony/OpenHarmony native
+  libraries and bundled Chinese hotwords.
 
-Full local ASR and HY-MT2 support still requires porting the Android native
-libraries to Harmony NAPI / OHOS `.so` binaries.
+HY-MT2 translation still requires porting the Android llama.cpp JNI layer to a
+Harmony NAPI / OHOS `.so` runtime before it can run natively in this branch.
