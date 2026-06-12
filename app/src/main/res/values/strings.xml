@@ -11,7 +11,7 @@
     <string name="choose_input_method">选择输入法</string>
     <string name="hero_title">中文语音听写</string>
     <string name="hero_subtitle">本机识别，不上传录音</string>
-    <string name="hero_body">0.3.2 支持流式回填、稳妥听写、HY-MT2 离线翻译、本地大词库、阿拉伯数字修正和可选 AI 联网润写。翻译输出仍使用稳妥模式，避免边识别边改写造成误发。</string>
+    <string name="hero_body">0.3.5 支持流式实时尾部校准、稳妥听写、HY-MT2 离线翻译、本地大词库、阿拉伯数字修正和可选 AI 联网润写。翻译输出仍使用稳妥模式，避免边识别边改写造成误发。</string>
     <string name="hero_chip_offline">本机识别</string>
     <string name="hero_chip_streaming">AI 可选</string>
     <string name="settings_section">设置</string>

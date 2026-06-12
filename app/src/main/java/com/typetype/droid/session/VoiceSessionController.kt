@@ -51,6 +51,7 @@ class VoiceSessionController(
     private var streamingCommittedText = ""
     private var streamingActiveText = ""
     private var streamingSegmentPrefix = ""
+    private val streamingRealtimeTextProcessor = StreamingRealtimeTextProcessor()
     private var stopCompletionPending = false
 
     fun setMode(mode: DictationMode) {
@@ -96,7 +97,12 @@ class VoiceSessionController(
         }
         val cleanedText = StructuredTextFormatter.removeAsrArtifacts(text)
         if (cleanedText.isBlank()) return
-        val outputText = StructuredTextFormatter.punctuateStreamingQuestions(streamingOutputText(cleanedText))
+        val processed = streamingRealtimeTextProcessor.processPartial(
+            streamingOutputText(cleanedText),
+            stablePause = false,
+            final = false,
+        )
+        val outputText = processed.stableText
         streamingActiveText = outputText
         commitController.writeStreaming(outputText)
         update(state.copy(error = null, draftText = currentStreamingTranscript()))
@@ -284,6 +290,7 @@ class VoiceSessionController(
         }
         streamingActiveText = ""
         streamingSegmentPrefix = ""
+        streamingRealtimeTextProcessor.reset()
         commitController.finishStreamingSegment()
         update(state.copy(error = null, draftText = currentStreamingTranscript()))
     }
@@ -558,6 +565,7 @@ class VoiceSessionController(
         streamingCommittedText = ""
         streamingActiveText = ""
         streamingSegmentPrefix = ""
+        streamingRealtimeTextProcessor.reset()
     }
 
     private fun fail(message: String) {

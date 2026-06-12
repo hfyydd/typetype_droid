@@ -19,8 +19,15 @@ object StructuredTextFormatter {
     private val chineseDigitChars = "零〇○OＯ一二两三四五六七八九幺壹贰叁肆伍陆柒捌玖"
     private val weekdayPattern = Regex("""(?:周|星期|礼拜)[一二三四五六日天]""")
     private val enumerationMarkerPattern = Regex("""第(?:一|二|三|四|五|六|七|八|九|十|[1-9]|10)""")
+    private val questionPhrasePattern = Regex("""(能不能|可不可以|有没有|要不要|好不好|行不行|对不对|需不需要|会不会|找没找着|带没带)[\p{IsHan}A-Za-z0-9]{0,8}$""")
+    private val incompleteStablePausePattern = Regex("""(我感觉|我觉得|应该|因为|如果|比如|就是|然后|另外|但是|不过|所以|接下来|下一个|要|需要|可以|通过|先|再|把|让)$""")
+    private val completeClauseEndPattern = Regex("""(了|着|过|完|好|对|是|可以|完成|结束|下了|没问题|差不多)$""")
 
     private val riskSeparators = listOf("另外风险是", "风险是", "风险：", "风险:")
+    private val softBoundaryWords = listOf("然后", "同时", "而且", "并且", "还有", "比如", "就是", "那就是")
+    private val strongBoundaryWords = listOf("另外", "但是", "不过", "所以", "因此", "接下来", "下一个", "也就是说", "换句话说", "最后")
+    private val sentenceBoundaryWords = setOf("另外", "接下来", "下一个", "也就是说", "换句话说", "最后")
+    private val allBoundaryWords = (strongBoundaryWords + softBoundaryWords).distinct().sortedByDescending { it.length }
 
     fun prefixStreamingBoundaryPunctuation(previousText: String, nextText: String): String {
         val previous = previousText.trim()
@@ -36,7 +43,7 @@ object StructuredTextFormatter {
     }
 
     fun punctuateStreamingQuestions(text: String): String {
-        return normalizeNumbers(punctuateQuestionClauses(text))
+        return normalizeNumbers(punctuateQuestionClauses(text), streamingPartial = true)
     }
 
     fun removeAsrArtifacts(text: String): String {
@@ -54,19 +61,65 @@ object StructuredTextFormatter {
             .trim('，', ',', '；', ';', '：', ':', ' ')
     }
 
-    fun normalizeNumbers(text: String): String {
+    fun normalizeNumbers(text: String, streamingPartial: Boolean = false): String {
         if (text.isBlank()) return text
         val protected = protectNumberSensitiveTerms(text)
         var working = protected.text
         working = normalizeVersionNumbers(working)
-        working = normalizePhoneNumbers(working)
-        working = normalizeIdentifierNumbers(working)
+        working = normalizePhoneNumbers(working, streamingPartial)
+        working = normalizeIdentifierNumbers(working, streamingPartial)
         working = normalizeDates(working)
         working = normalizePercentages(working)
         working = normalizeMoney(working)
         working = normalizeTimes(working)
         working = normalizeCountNumbers(working)
         return restoreProtectedTerms(working, protected.tokens)
+    }
+
+    fun applyExplicitPunctuationCommands(text: String): String {
+        return text
+            .replace(Regex("""(?:加)?逗号"""), "，")
+            .replace(Regex("""(?:加)?句号"""), "。")
+            .replace(Regex("""(?:加)?问号"""), "？")
+            .replace(Regex("""(?:加)?感叹号"""), "！")
+    }
+
+    fun applyStableStreamingPunctuation(
+        text: String,
+        final: Boolean,
+        stablePause: Boolean,
+    ): String {
+        var result = applyExplicitPunctuationCommands(text)
+            .replace(Regex("""\s+([，。！？；：、,.!?;:])"""), "\$1")
+            .replace(Regex("""([（【《])\s+"""), "\$1")
+            .replace(Regex("""\s+([）】》])"""), "\$1")
+            .trim()
+
+        result = punctuateQuestionClauses(result)
+        result = insertQuestionBoundaryPunctuation(result)
+        result = insertSemanticBoundaryPunctuation(result, final)
+        result = insertDiscourseMarkerComma(result)
+
+        if ((questionEndingPattern.containsMatchIn(result) || questionPhrasePattern.containsMatchIn(result)) &&
+            !Regex("""[？?]$""").containsMatchIn(result)
+        ) {
+            return result.replace(trailingClausePunctuationPattern, "") + "？"
+        }
+        if (final && result.isNotBlank() && !sentenceEndingPattern.containsMatchIn(result)) {
+            return result.replace(trailingClausePunctuationPattern, "") + "。"
+        }
+        if (stablePause &&
+            result.isNotBlank() &&
+            !anyEndingPunctuationPattern.containsMatchIn(result) &&
+            !incompleteStablePausePattern.containsMatchIn(result)
+        ) {
+            val lastClause = lastStableClause(result)
+            val lastClauseLength = lastClause.length
+            if (lastClauseLength >= 8) {
+                return "$result，"
+            }
+        }
+        return result
     }
 
     fun ensureFinalPunctuation(text: String): String {
@@ -138,7 +191,7 @@ object StructuredTextFormatter {
         return restored
     }
 
-    private fun normalizePhoneNumbers(text: String): String {
+    private fun normalizePhoneNumbers(text: String, streamingPartial: Boolean): String {
         val context = "(手机号|手机号码|电话号码|联系电话|客服电话|客服热线|服务热线|热线电话|座机号码|座机|电话|分机号|分机)"
         val pattern = Regex("""$context([是为叫:]|：)?\s*([$chineseDigitChars]{2,}(?:[\s-]*[$chineseDigitChars])*)""")
         return pattern.replace(text) { match ->
@@ -146,15 +199,17 @@ object StructuredTextFormatter {
             val joiner = match.groupValues[2]
             val digits = chineseDigitsToArabic(match.groupValues[3]) ?: return@replace match.value
             val isExtension = label.contains("分机")
-            if (!isExtension && digits.length < 5) match.value else "$label$joiner$digits"
+            val minDigits = if (streamingPartial) 7 else 5
+            if (!isExtension && digits.length < minDigits) match.value else "$label$joiner$digits"
         }
     }
 
-    private fun normalizeIdentifierNumbers(text: String): String {
+    private fun normalizeIdentifierNumbers(text: String, streamingPartial: Boolean): String {
         val context = "(订单号|订单编号|编号|单号|工号|验证码|取件码|房间号|门牌号|卡号|账号|帐号|单据号)"
         val pattern = Regex("""$context([是为叫:]|：)?\s*([$chineseDigitChars]{2,}(?:[\s-]*[$chineseDigitChars])*)""")
         return pattern.replace(text) { match ->
             val digits = chineseDigitsToArabic(match.groupValues[3]) ?: return@replace match.value
+            if (streamingPartial && digits.length < 4) return@replace match.value
             "${match.groupValues[1]}${match.groupValues[2]}$digits"
         }
     }
@@ -405,6 +460,47 @@ object StructuredTextFormatter {
         }
         output.append(segment)
         return output.toString()
+    }
+
+    private fun insertQuestionBoundaryPunctuation(text: String): String {
+        return text
+            .replace(
+                Regex("""([了着过完好对是])((?:你|我|他|她|它|我们|他们)?(?:带没带|找没找着|有没有|能不能|可不可以|要不要|是不是|会不会|行不行))"""),
+                "\$1。\$2",
+            )
+            .replace(
+                Regex("""((?:你|我|他|她|它|我们|他们)?(?:带没带|找没找着|有没有|能不能|可不可以|要不要|是不是|会不会|行不行)[^，。！？!?]{0,8}(?:啊|呀|呢|吗)?)(?=(?:耳机|手机|钥匙|文件|东西|你|我|他|她|它|我们|他们|今天|明天|后天|现在|然后|另外|但是|不过|所以|接下来|下一个))"""),
+                "\$1？",
+            )
+    }
+
+    private fun insertSemanticBoundaryPunctuation(text: String, final: Boolean): String {
+        if (text.isBlank() || allBoundaryWords.isEmpty()) return text
+        val pattern = Regex("""([^。！？!?，,、；;：:\s])(${allBoundaryWords.joinToString("|") { Regex.escape(it) }})""")
+        return pattern.replace(text) { match ->
+            val previousChar = match.groupValues[1]
+            val word = match.groupValues[2]
+            if (word == "就是" && previousChar == "那") {
+                return@replace previousChar + word
+            }
+            val previousClause = lastStableClause(text.substring(0, match.range.first + previousChar.length))
+            val isStrongBoundary = strongBoundaryWords.contains(word)
+            val isSentenceBoundary = sentenceBoundaryWords.contains(word)
+            val punctuation = if (isStrongBoundary && isSentenceBoundary && (final || previousClause.length >= 16)) {
+                "。"
+            } else {
+                "，"
+            }
+            previousChar + punctuation + word
+        }
+    }
+
+    private fun insertDiscourseMarkerComma(text: String): String {
+        return text.replace(Regex("""(也就是说|换句话说|比如)([^，,。！？!?；;：:\s])"""), "\$1，\$2")
+    }
+
+    private fun lastStableClause(text: String): String {
+        return text.split(Regex("""[，,。！？!?；;：:\n]""")).lastOrNull()?.trim() ?: text.trim()
     }
 
     private fun looksLikeQuestion(text: String): Boolean {

@@ -248,6 +248,29 @@ class VoiceSessionControllerTest {
     }
 
     @Test
+    fun streamingTextAppliesRealtimeTailNumberCorrection() {
+        val connection = FakeEditableInputConnection()
+        val asrEngineFactory = FakeAsrEngineFactory()
+        val controller = VoiceSessionController(
+            audioCaptureEngine = AudioCaptureEngine(),
+            asrEngineFactory = asrEngineFactory,
+            commitController = InputCommitController(),
+        )
+
+        controller.handle(SessionEvent.InputStarted(connection))
+        controller.installEngineForTest(asrEngineFactory.engine)
+        controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
+        controller.handle(SessionEvent.StreamingText("我的手机号是一三八"))
+
+        assertEquals("我的手机号是一三八", connection.text)
+
+        controller.handle(SessionEvent.StreamingText("我的手机号是一三八一二三四五六七八"))
+
+        assertEquals("我的手机号是13812345678", connection.text)
+        assertEquals("我的手机号是13812345678", controller.state.draftText)
+    }
+
+    @Test
     fun longStreamingDraftIsKeptCompleteForScrollablePanel() {
         val connection = FakeEditableInputConnection()
         val asrEngineFactory = FakeAsrEngineFactory()
@@ -257,14 +280,15 @@ class VoiceSessionControllerTest {
             commitController = InputCommitController(),
         )
         val longText = "这个地方先讲研究方法再讲结论然后讲风险最后讲下一步安排".repeat(4)
+        val expected = "这个地方先讲研究方法再讲结论，然后讲风险。最后讲下一步安排".repeat(4)
 
         controller.handle(SessionEvent.InputStarted(connection))
         controller.installEngineForTest(asrEngineFactory.engine)
         controller.setPhaseForTest(VoiceSessionState.Phase.LISTENING)
         controller.handle(SessionEvent.StreamingText(longText))
 
-        assertEquals(longText, controller.state.draftText)
-        assertEquals(longText, connection.text)
+        assertEquals(expected, controller.state.draftText)
+        assertEquals(expected, connection.text)
     }
 
     @Test
