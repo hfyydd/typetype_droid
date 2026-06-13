@@ -131,6 +131,19 @@ class StructuredTextFormatterTest {
     }
 
     @Test
+    fun windows036PercentAndDecimalPunctuationCasesAreSupported() {
+        assertEquals("占比76%、100%。", StructuredTextFormatter.rewrite("占比百分之七十六百分之百"))
+        assertEquals("准确率99.5%。", StructuredTextFormatter.rewrite("准确率百分之九十九点五"))
+        assertEquals("占比76.3%。", StructuredTextFormatter.rewrite("占比百分之76。3。"))
+        assertEquals("抽检比例5‰。", StructuredTextFormatter.rewrite("抽检比例千分之五"))
+        assertEquals("风险概率3‱。", StructuredTextFormatter.rewrite("风险概率万分之三"))
+        assertEquals("占比76%、100%。", StructuredTextFormatter.rewrite("占比76。100。"))
+        assertEquals("76%、3%、59%。", StructuredTextFormatter.rewrite("七十六。3。59."))
+        assertEquals("76.3%。", StructuredTextFormatter.rewrite("76。3。"))
+        assertEquals("一。二。三。", StructuredTextFormatter.rewrite("一。二。三。"))
+    }
+
+    @Test
     fun idiomNumbersArePreserved() {
         assertEquals("一心一意做好服务。", StructuredTextFormatter.rewrite("一心一意做好服务"))
         assertEquals("三三两两的人过来。", StructuredTextFormatter.rewrite("三三两两的人过来"))

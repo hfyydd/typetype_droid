@@ -22,6 +22,8 @@ object StructuredTextFormatter {
     private val questionPhrasePattern = Regex("""(能不能|可不可以|有没有|要不要|好不好|行不行|对不对|需不需要|会不会|找没找着|带没带)[\p{IsHan}A-Za-z0-9]{0,8}$""")
     private val incompleteStablePausePattern = Regex("""(我感觉|我觉得|应该|因为|如果|比如|就是|然后|另外|但是|不过|所以|接下来|下一个|要|需要|可以|通过|先|再|把|让)$""")
     private val completeClauseEndPattern = Regex("""(了|着|过|完|好|对|是|可以|完成|结束|下了|没问题|差不多)$""")
+    private val percentValueChars = "${chineseNumberChars}点。"
+    private val percentContextPattern = Regex("""(?i)(占比|比例|比率|百分比|增长率|完成率|准确率|正确率|错误率|通过率|合格率|达标率|转化率|留存率|覆盖率|达成率|利用率|出勤率|满意度|ROI|同比|环比|利润率)([是为达到达到了约大概左右\s:：]*)(\d{1,3}(?:\.\d+)?)(?![%‰‱\d.年月日号点分元块人个])""")
 
     private val riskSeparators = listOf("另外风险是", "风险是", "风险：", "风险:")
     private val softBoundaryWords = listOf("然后", "同时", "而且", "并且", "还有", "比如", "就是", "那就是")
@@ -261,10 +263,157 @@ object StructuredTextFormatter {
     }
 
     private fun normalizePercentages(text: String): String {
-        return Regex("""百分之([$chineseNumberChars]{1,8})""").replace(text) { match ->
-            val value = parseChineseNumber(match.groupValues[1])
-            if (value != null) "${value}%" else match.value
+        var result = normalizeExplicitPercentMarkers(text)
+        result = normalizeContextualPercentNumbers(result)
+        result = normalizeStandalonePercentList(result)
+        result = normalizeStandalonePercentDecimal(result)
+        result = normalizePercentListSeparators(result)
+        result = Regex("""([%‰‱])(?=\d)""").replace(result, "$1、")
+        return result
+    }
+
+    private fun normalizeExplicitPercentMarkers(text: String): String {
+        val output = StringBuilder()
+        var index = 0
+        while (index < text.length) {
+            val marker = percentMarkers.firstOrNull { text.startsWith(it.marker, index) }
+            if (marker == null) {
+                output.append(text[index])
+                index += 1
+                continue
+            }
+
+            val valueStart = skipSpaces(text, index + marker.marker.length)
+            val parsed = parsePercentValueAt(text, valueStart)
+            if (parsed == null) {
+                output.append(marker.marker)
+                index += marker.marker.length
+                continue
+            }
+
+            output.append(parsed.value).append(marker.suffix)
+            index = parsed.end
         }
+        return output.toString()
+    }
+
+    private fun normalizeContextualPercentNumbers(text: String): String {
+        var result = percentContextPattern.replace(text) { match ->
+            "${match.groupValues[1]}${match.groupValues[2]}${match.groupValues[3]}%"
+        }
+        result = Regex("""([%‰‱])([。.]?\s*)(\d{1,3}(?:\.\d+)?)(?![%‰‱\d.年月日号点分元块人个])""")
+            .replace(result) { match ->
+                val separator = if (match.groupValues[2].contains(Regex("""[。.]"""))) "、" else match.groupValues[2]
+                "${match.groupValues[1]}$separator${match.groupValues[3]}${match.groupValues[1]}"
+            }
+        return result
+    }
+
+    private fun normalizePercentListSeparators(text: String): String {
+        return Regex("""([%‰‱])[。.]\s*(?=\d{1,3}(?:\.\d{1,2})?[%‰‱])""").replace(text, "$1、")
+    }
+
+    private fun normalizeStandalonePercentList(text: String): String {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || Regex("""[%‰‱百分千万]""").containsMatchIn(trimmed)) return text
+        if (!Regex("""^[\d零〇○OＯ一二两三四五六七八九十百幺壹贰叁肆伍陆柒捌玖\s。.,，、]+$""").matches(trimmed)) return text
+
+        val tokens = trimmed
+            .split(Regex("""[\s。.,，、]+"""))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (tokens.size < 3) return text
+
+        val values = tokens.map { parseStandalonePercentListValue(it) }
+        if (values.any { it == null }) return text
+        val numericValues = values.filterNotNull()
+        if (numericValues.none { it >= 10.0 }) return text
+
+        val finalPunctuation = if (trimmed.endsWith("。")) "。" else ""
+        val normalized = numericValues.joinToString("、") { "${formatPercentNumber(it)}%" } + finalPunctuation
+        return text.replace(trimmed, normalized)
+    }
+
+    private fun normalizeStandalonePercentDecimal(text: String): String {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || Regex("""[%‰‱百分千万]""").containsMatchIn(trimmed)) return text
+        val finalPunctuation = if (trimmed.endsWith("。")) "。" else ""
+
+        Regex("""^(\d{1,3})。(\d{1,2})[。.]?$""").matchEntire(trimmed)?.let { match ->
+            val integer = match.groupValues[1].toIntOrNull()
+            if (integer != null && integer in 0..100) {
+                return text.replace(trimmed, "${integer}.${match.groupValues[2]}%$finalPunctuation")
+            }
+            return text
+        }
+
+        Regex("""^([$chineseNumberChars]+)。([$chineseDigitChars]{1,2})[。.]?$""").matchEntire(trimmed)?.let { match ->
+            val value = parseChineseNumberLikePercent("${match.groupValues[1]}点${match.groupValues[2]}") ?: return text
+            val numericValue = value.toDoubleOrNull() ?: return text
+            return if (numericValue in 0.0..100.0) text.replace(trimmed, "$value%$finalPunctuation") else text
+        }
+        return text
+    }
+
+    private fun parseStandalonePercentListValue(token: String): Double? {
+        if (Regex("""^\d{1,3}(?:\.\d{1,2})?$""").matches(token)) {
+            val value = token.toDoubleOrNull() ?: return null
+            return value.takeIf { it in 0.0..100.0 }
+        }
+        if (!Regex("""^[$chineseNumberChars]+$""").matches(token)) return null
+        val value = parseChineseNumber(token)?.toDouble() ?: return null
+        return value.takeIf { it in 0.0..100.0 }
+    }
+
+    private fun parsePercentValueAt(text: String, start: Int): PercentParseResult? {
+        val arabic = Regex("""^(\d+)(?:[.。点](\d{1,2}))?""").find(text.substring(start))
+        if (arabic != null) {
+            val value = if (arabic.groupValues[2].isEmpty()) arabic.groupValues[1] else "${arabic.groupValues[1]}.${arabic.groupValues[2]}"
+            return PercentParseResult(value, start + arabic.value.length)
+        }
+
+        val valueText = StringBuilder()
+        var index = start
+        var decimalSeen = false
+        while (index < text.length) {
+            if (percentMarkers.any { text.startsWith(it.marker, index) }) break
+            val char = text[index]
+            if (char == '点' || char == '。') {
+                val nextChar = text.getOrNull(index + 1)
+                if (decimalSeen || nextChar == null || chineseDigitValue(nextChar) == null) break
+                valueText.append('点')
+                decimalSeen = true
+                index += 1
+                continue
+            }
+            if (!percentValueChars.contains(char)) break
+            valueText.append(char)
+            index += 1
+        }
+
+        val value = parseChineseNumberLikePercent(valueText.toString()) ?: return null
+        return PercentParseResult(value, index)
+    }
+
+    private fun parseChineseNumberLikePercent(value: String): String? {
+        if (value.isBlank()) return null
+        val parts = value.split("点")
+        if (parts.size > 2) return null
+        val integer = parseChineseNumber(parts.first().ifEmpty { "零" }) ?: return null
+        if (parts.size == 1) return integer.toString()
+        val decimals = parts[1].map { chineseDigitValue(it) ?: return null }
+        if (decimals.isEmpty()) return null
+        return "$integer${"."}${decimals.joinToString("")}"
+    }
+
+    private fun skipSpaces(text: String, start: Int): Int {
+        var index = start
+        while (index < text.length && text[index].isWhitespace()) index += 1
+        return index
+    }
+
+    private fun formatPercentNumber(value: Double): String {
+        return if (value % 1.0 == 0.0) value.toLong().toString() else value.toString().trimEnd('0').trimEnd('.')
     }
 
     private fun normalizeMoney(text: String): String {
@@ -546,6 +695,16 @@ object StructuredTextFormatter {
         val value: String,
     )
 
+    private data class PercentMarker(
+        val marker: String,
+        val suffix: String,
+    )
+
+    private data class PercentParseResult(
+        val value: String,
+        val end: Int,
+    )
+
     private val weakClauseDelimiters = setOf('，', ',', '；', ';', '\n', '\r')
     private val lineBreakDelimiters = setOf('\n', '\r')
     private val strongClauseDelimiters = setOf('。', '！', '？', '!', '?')
@@ -580,6 +739,11 @@ object StructuredTextFormatter {
         "未確定",
         "没确定",
         "沒確定",
+    )
+    private val percentMarkers = listOf(
+        PercentMarker("百分之", "%"),
+        PercentMarker("千分之", "‰"),
+        PercentMarker("万分之", "‱"),
     )
     private val preservedUppercaseEnglishTokens = setOf(
         "AI",

@@ -66,4 +66,20 @@ class StreamingRealtimeTextProcessorTest {
         assertEquals("我的手机号是13812345678", second.stableText)
         assertNotNull(second.tailCorrection)
     }
+
+    @Test
+    fun percentMarkersAreNormalizedInStreamingTailAndFinalText() {
+        val processor = StreamingRealtimeTextProcessor()
+
+        val partial = processor.processPartial("占比百分之七十六。三。百分之百", stablePause = true)
+        val final = processor.processStableSegment("占比76。100。", final = true)
+        val list = processor.processStableSegment("七十六。3。59.", final = true)
+        val decimal = processor.processStableSegment("76。3。", final = true)
+
+        assertTrue(partial.stableText.contains("76.3%"))
+        assertTrue(partial.stableText.contains("100%"))
+        assertEquals("占比76%、100%。", final)
+        assertTrue(list.contains("76%、3%、59%"))
+        assertTrue(decimal.contains("76.3%"))
+    }
 }
