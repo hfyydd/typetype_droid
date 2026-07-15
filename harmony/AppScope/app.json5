@@ -1,0 +1,10 @@
+{
+  "app": {
+    "bundleName": "com.typetype.harmony",
+    "vendor": "typetype",
+    "versionCode": 610031,
+    "versionName": "0.3.1-harmonyos-6.1",
+    "icon": "$media:app_icon",
+    "label": "$string:app_name"
+  }
+}
